@@ -1,3 +1,7 @@
 //! ADB client library for Android device communication.
 
-pub fn placeholder() {}
+mod adb;
+mod error;
+
+pub use adb::Adb;
+pub use error::AdbError;
