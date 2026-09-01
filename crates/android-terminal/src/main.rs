@@ -11,7 +11,7 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 700.0])
+            .with_inner_size([1200.0, 700.0])
             .with_title("Android Terminal"),
         ..Default::default()
     };
@@ -37,6 +37,7 @@ fn main() -> eframe::Result<()> {
                 logcat_rx: None,
                 logcat_stream: None,
                 log_lines: VecDeque::new(),
+                error_lines: VecDeque::new(),
                 logcat_error: None,
                 auto_scroll: true,
             }))
@@ -52,6 +53,7 @@ struct App {
     logcat_rx: Option<Receiver<LogEntry>>,
     logcat_stream: Option<LogcatStream>,
     log_lines: VecDeque<LogEntry>,
+    error_lines: VecDeque<LogEntry>,
     logcat_error: Option<String>,
     auto_scroll: bool,
 }
@@ -73,6 +75,7 @@ impl App {
         self.stop_logcat();
         self.selected_serial = Some(serial.clone());
         self.log_lines.clear();
+        self.error_lines.clear();
         self.logcat_error = None;
 
         match LogcatStream::spawn(&serial) {
@@ -90,19 +93,30 @@ impl App {
     }
 
     fn drain_logcat(&mut self) -> bool {
-        let Some(rx) = self.logcat_rx.as_ref() else {
-            return false;
+        let entries: Vec<LogEntry> = match self.logcat_rx.as_ref() {
+            Some(rx) => rx.try_iter().collect(),
+            None => return false,
         };
 
-        let mut new_lines = false;
-        while let Ok(entry) = rx.try_recv() {
-            new_lines = true;
-            self.log_lines.push_back(entry);
-            while self.log_lines.len() > MAX_LOG_LINES {
-                self.log_lines.pop_front();
-            }
+        if entries.is_empty() {
+            return false;
         }
-        new_lines
+
+        for entry in entries {
+            if entry.is_error_level() {
+                self.error_lines.push_back(entry.clone());
+                trim_buffer(&mut self.error_lines);
+            }
+            self.log_lines.push_back(entry);
+            trim_buffer(&mut self.log_lines);
+        }
+        true
+    }
+}
+
+fn trim_buffer(buffer: &mut VecDeque<LogEntry>) {
+    while buffer.len() > MAX_LOG_LINES {
+        buffer.pop_front();
     }
 }
 
@@ -166,36 +180,74 @@ impl eframe::App for App {
                 });
             });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if self.adb_error.is_some() {
-                return;
-            }
+        egui::SidePanel::right("logcat_errors")
+            .resizable(true)
+            .default_width(400.0)
+            .show(ctx, |ui| {
+                bordered_panel(ui, "Logcat (Errors)", |ui| {
+                    if self.adb_error.is_some() {
+                        return;
+                    }
 
-            ui.horizontal(|ui| {
-                ui.label("Logcat");
-                ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
+                    if self.selected_serial.is_none() {
+                        ui.label("Select a device to start logcat.");
+                        return;
+                    }
+
+                    show_log_scroll(ui, &self.error_lines, self.auto_scroll);
+                });
             });
 
-            if let Some(error) = &self.logcat_error {
-                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
-            }
+        egui::CentralPanel::default().show(ctx, |ui| {
+            bordered_panel(ui, "Logcat (All)", |ui| {
+                if self.adb_error.is_some() {
+                    return;
+                }
 
-            if self.selected_serial.is_none() {
-                ui.label("Select a device to start logcat.");
-                return;
-            }
-
-            egui::ScrollArea::vertical()
-                .stick_to_bottom(self.auto_scroll)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
-                    for entry in &self.log_lines {
-                        ui.colored_label(log_level_color(entry.level), entry.format_line());
-                    }
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
                 });
+
+                if let Some(error) = &self.logcat_error {
+                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+                }
+
+                if self.selected_serial.is_none() {
+                    ui.label("Select a device to start logcat.");
+                    return;
+                }
+
+                show_log_scroll(ui, &self.log_lines, self.auto_scroll);
+            });
         });
     }
+}
+
+fn bordered_panel<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    egui::Frame::group(ui.style())
+        .inner_margin(egui::Margin::same(8))
+        .show(ui, |ui| {
+            ui.heading(title);
+            ui.separator();
+            add_contents(ui)
+        })
+        .inner
+}
+
+fn show_log_scroll(ui: &mut egui::Ui, lines: &VecDeque<LogEntry>, auto_scroll: bool) {
+    egui::ScrollArea::vertical()
+        .stick_to_bottom(auto_scroll)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
+            for entry in lines {
+                ui.colored_label(log_level_color(entry.level), entry.format_line());
+            }
+        });
 }
 
 fn device_state_label(state: &DeviceState) -> &str {

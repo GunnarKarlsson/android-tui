@@ -36,6 +36,11 @@ impl LogEntry {
         )
     }
 
+    /// Returns true for Error (`E`) and Fatal (`F`) log levels.
+    pub fn is_error_level(&self) -> bool {
+        matches!(self.level, 'E' | 'F')
+    }
+
     fn raw(message: String) -> Self {
         LogEntry {
             timestamp: String::new(),
@@ -224,5 +229,16 @@ mod tests {
     #[test]
     fn skip_unrecognized_line() {
         assert!(parse_logcat_line("--------- beginning of main").is_none());
+    }
+
+    #[test]
+    fn error_level_filter() {
+        let error = parse_logcat_line("09-01 17:00:01.456  1  1 E Tag: boom").unwrap();
+        let fatal = parse_logcat_line("09-01 17:00:01.456  1  1 F Tag: boom").unwrap();
+        let warning = parse_logcat_line("09-01 17:00:01.456  1  1 W Tag: boom").unwrap();
+
+        assert!(error.is_error_level());
+        assert!(fatal.is_error_level());
+        assert!(!warning.is_error_level());
     }
 }
