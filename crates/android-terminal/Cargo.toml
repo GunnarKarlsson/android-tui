@@ -1,0 +1,13 @@
+[package]
+name = "android-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+adb-client = { path = "../adb-client" }
+anyhow.workspace = true
+crossbeam-channel.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_tiles.workspace = true
