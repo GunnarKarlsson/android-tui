@@ -12,4 +12,10 @@ pub enum AdbError {
 
     #[error("adb version check failed: {0}")]
     VersionCheckFailed(String),
+
+    #[error("adb command failed ({command}): {stderr}")]
+    CommandFailed { command: String, stderr: String },
+
+    #[error("failed to parse adb output: {0}")]
+    ParseFailed(String),
 }
