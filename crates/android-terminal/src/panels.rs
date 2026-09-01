@@ -46,15 +46,30 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     );
 }
 
-pub fn logcat_errors(ui: &mut egui::Ui, app: &App) {
+pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
+    ui.horizontal(|ui| {
+        ui.label("Filter:");
+        ui.add(
+            egui::TextEdit::singleline(&mut app.error_logcat_filter)
+                .hint_text("Search errors…")
+                .desired_width(ui.available_width()),
+        )
+        .on_hover_text("Filter error lines by text");
+    });
+
     if app.selected_serial.is_none() {
         ui.label("Select a device to start logcat.");
         return;
     }
 
-    ui.label(format!("{} error lines", app.error_lines.len()));
+    let filter = app.error_logcat_filter.clone();
+    let matching = filtered_line_indices(&app.error_lines, &filter);
+    ui.label(format!(
+        "Showing {} of {} error lines",
+        matching.len(),
+        app.error_lines.len()
+    ));
 
-    let matching: Vec<usize> = (0..app.error_lines.len()).collect();
     show_log_scroll(
         ui,
         &app.error_lines,

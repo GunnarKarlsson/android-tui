@@ -29,6 +29,7 @@ pub struct App {
     pub logcat_error: Option<String>,
     pub auto_scroll: bool,
     pub logcat_filter: String,
+    pub error_logcat_filter: String,
 }
 
 #[derive(Clone)]
@@ -66,6 +67,7 @@ impl App {
             logcat_error: None,
             auto_scroll: true,
             logcat_filter: String::new(),
+            error_logcat_filter: String::new(),
         }
     }
 
@@ -89,6 +91,7 @@ impl App {
         self.error_lines.clear();
         self.logcat_error = None;
         self.logcat_filter.clear();
+        self.error_logcat_filter.clear();
         self.system_stats = None;
         self.stats_error = None;
         self.network_stats = None;
