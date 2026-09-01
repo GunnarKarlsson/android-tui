@@ -30,13 +30,7 @@ pub(crate) fn run_adb(args: &[&str]) -> Result<Output, AdbError> {
     let output = Command::new("adb")
         .args(args)
         .output()
-        .map_err(|err| {
-            if err.kind() == io::ErrorKind::NotFound {
-                AdbError::NotFound
-            } else {
-                AdbError::Io(err)
-            }
-        })?;
+        .map_err(map_io_error)?;
 
     if output.status.success() {
         Ok(output)
@@ -44,5 +38,21 @@ pub(crate) fn run_adb(args: &[&str]) -> Result<Output, AdbError> {
         let command = format!("adb {}", args.join(" "));
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         Err(AdbError::CommandFailed { command, stderr })
+    }
+}
+
+pub(crate) fn run_adb_for_serial(serial: &str, args: &[&str]) -> Result<Output, AdbError> {
+    let mut full_args = Vec::with_capacity(2 + args.len());
+    full_args.push("-s");
+    full_args.push(serial);
+    full_args.extend_from_slice(args);
+    run_adb(&full_args)
+}
+
+fn map_io_error(err: io::Error) -> AdbError {
+    if err.kind() == io::ErrorKind::NotFound {
+        AdbError::NotFound
+    } else {
+        AdbError::Io(err)
     }
 }

@@ -1,11 +1,17 @@
 use std::collections::VecDeque;
 
-use adb_client::{Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream};
+use adb_client::{
+    Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, StatsPoller, SystemStats,
+};
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
 const MAX_LOG_LINES: usize = 10_000;
 const MAX_DRAIN_PER_FRAME: usize = 500;
+const DEFAULT_STATS_PANEL_HEIGHT: f32 = 140.0;
+const MIN_STATS_PANEL_HEIGHT: f32 = 96.0;
+const MIN_LOGCAT_PANEL_HEIGHT: f32 = 120.0;
+const STATS_RESIZE_HANDLE_HEIGHT: f32 = 10.0;
 
 fn main() -> eframe::Result<()> {
     let adb_error = Adb::check_available().err().map(|e| e.to_string());
@@ -37,10 +43,15 @@ fn main() -> eframe::Result<()> {
                 selected_serial: None,
                 logcat_rx: None,
                 logcat_stream: None,
+                stats_rx: None,
+                stats_poller: None,
+                system_stats: None,
+                stats_error: None,
                 log_lines: VecDeque::new(),
                 error_lines: VecDeque::new(),
                 logcat_error: None,
                 auto_scroll: true,
+                stats_panel_height: DEFAULT_STATS_PANEL_HEIGHT,
             }))
         }),
     )
@@ -68,10 +79,15 @@ struct App {
     selected_serial: Option<String>,
     logcat_rx: Option<Receiver<LogEntry>>,
     logcat_stream: Option<LogcatStream>,
+    stats_rx: Option<Receiver<SystemStats>>,
+    stats_poller: Option<StatsPoller>,
+    system_stats: Option<SystemStats>,
+    stats_error: Option<String>,
     log_lines: VecDeque<CachedLogLine>,
     error_lines: VecDeque<CachedLogLine>,
     logcat_error: Option<String>,
     auto_scroll: bool,
+    stats_panel_height: f32,
 }
 
 impl App {
@@ -89,10 +105,13 @@ impl App {
         }
 
         self.stop_logcat();
+        self.stop_stats();
         self.selected_serial = Some(serial.clone());
         self.log_lines.clear();
         self.error_lines.clear();
         self.logcat_error = None;
+        self.system_stats = None;
+        self.stats_error = None;
 
         match LogcatStream::spawn(&serial) {
             Ok((rx, stream)) => {
@@ -101,6 +120,19 @@ impl App {
             }
             Err(err) => self.logcat_error = Some(err.to_string()),
         }
+
+        match StatsPoller::spawn(&serial) {
+            Ok((rx, poller)) => {
+                self.stats_rx = Some(rx);
+                self.stats_poller = Some(poller);
+            }
+            Err(err) => self.stats_error = Some(err.to_string()),
+        }
+    }
+
+    fn stop_stats(&mut self) {
+        self.stats_rx = None;
+        self.stats_poller = None;
     }
 
     fn stop_logcat(&mut self) {
@@ -133,6 +165,19 @@ impl App {
         }
         true
     }
+
+    fn drain_stats(&mut self) -> bool {
+        let Some(rx) = self.stats_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(stats) = rx.try_recv() {
+            self.system_stats = Some(stats);
+            updated = true;
+        }
+        updated
+    }
 }
 
 fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
@@ -143,7 +188,14 @@ fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let mut needs_repaint = false;
         if self.drain_logcat() {
+            needs_repaint = true;
+        }
+        if self.drain_stats() {
+            needs_repaint = true;
+        }
+        if needs_repaint {
             ctx.request_repaint();
         }
 
@@ -177,7 +229,9 @@ impl eframe::App for App {
                     return;
                 }
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(egui::Id::new("device_list"))
+                    .show(ui, |ui| {
                     let device_count = self.devices.len();
                     for index in 0..device_count {
                         let device = &self.devices[index];
@@ -218,32 +272,165 @@ impl eframe::App for App {
                         return;
                     }
 
-                    show_log_scroll(ui, &self.error_lines, self.auto_scroll);
+                    show_log_scroll(
+                        ui,
+                        &self.error_lines,
+                        self.auto_scroll,
+                        egui::Id::new("logcat_errors_scroll"),
+                    );
                 });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            bordered_panel(ui, "Logcat (All)", |ui| {
-                if self.adb_error.is_some() {
-                    return;
+            if self.adb_error.is_some() {
+                return;
+            }
+
+            ui.vertical(|ui| {
+                let total_height = ui.available_height();
+                let max_stats_height =
+                    (total_height - MIN_LOGCAT_PANEL_HEIGHT - STATS_RESIZE_HANDLE_HEIGHT).max(0.0);
+                self.stats_panel_height = self
+                    .stats_panel_height
+                    .clamp(MIN_STATS_PANEL_HEIGHT, max_stats_height);
+                let stats_height = self.stats_panel_height;
+                let logcat_height =
+                    (total_height - stats_height - STATS_RESIZE_HANDLE_HEIGHT).max(0.0);
+
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), logcat_height),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.set_height(logcat_height);
+                        bordered_panel(ui, "Logcat (All)", |ui| {
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
+                            });
+
+                            if let Some(error) = &self.logcat_error {
+                                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+                            }
+
+                            if self.selected_serial.is_none() {
+                                ui.label("Select a device to start logcat.");
+                                return;
+                            }
+
+                            show_log_scroll(
+                                ui,
+                                &self.log_lines,
+                                self.auto_scroll,
+                                egui::Id::new("logcat_all_scroll"),
+                            );
+                        });
+                    },
+                );
+
+                let resize_response =
+                    vertical_resize_handle(ui, STATS_RESIZE_HANDLE_HEIGHT, max_stats_height);
+                if resize_response.dragged() {
+                    self.stats_panel_height += resize_response.drag_delta().y;
+                    self.stats_panel_height = self
+                        .stats_panel_height
+                        .clamp(MIN_STATS_PANEL_HEIGHT, max_stats_height);
                 }
 
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
-                });
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), stats_height),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.set_height(stats_height);
+                        bordered_panel(ui, "Memory / Disk", |ui| {
+                            if self.selected_serial.is_none() {
+                                ui.label("Select a device to view memory and disk stats.");
+                                return;
+                            }
 
-                if let Some(error) = &self.logcat_error {
-                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
-                }
+                            if let Some(error) = &self.stats_error {
+                                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+                            }
 
-                if self.selected_serial.is_none() {
-                    ui.label("Select a device to start logcat.");
-                    return;
-                }
+                            let Some(stats) = &self.system_stats else {
+                                ui.label("Polling device stats...");
+                                return;
+                            };
 
-                show_log_scroll(ui, &self.log_lines, self.auto_scroll);
+                            egui::ScrollArea::vertical()
+                                .id_salt(egui::Id::new("memory_disk_scroll"))
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    show_system_stats(ui, stats);
+                                });
+                        });
+                    },
+                );
             });
         });
+    }
+}
+
+fn show_system_stats(ui: &mut egui::Ui, stats: &SystemStats) {
+    let memory = &stats.memory;
+
+    ui.label(format!(
+        "Memory: {} used / {} total ({} free, {} available)",
+        format_kb(memory.used_kb()),
+        format_kb(memory.total_kb),
+        format_kb(memory.free_kb),
+        format_kb(memory.available_kb),
+    ));
+    ui.label(format!(
+        "Buffers: {}  Cached: {}",
+        format_kb(memory.buffers_kb),
+        format_kb(memory.cached_kb),
+    ));
+
+    let progress = memory.used_fraction();
+    ui.add(
+        egui::ProgressBar::new(progress)
+            .text(format!("{:.0}% used", progress * 100.0))
+            .fill(egui::Color32::from_rgb(90, 150, 220)),
+    );
+
+    ui.separator();
+    ui.label("Disk");
+
+    egui::ScrollArea::horizontal()
+        .id_salt(egui::Id::new("disk_table_scroll"))
+        .show(ui, |ui| {
+        egui::Grid::new("disk_stats")
+            .num_columns(6)
+            .spacing([12.0, 4.0])
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("Filesystem");
+                ui.label("Size");
+                ui.label("Used");
+                ui.label("Avail");
+                ui.label("Use%");
+                ui.label("Mounted on");
+                ui.end_row();
+
+                for disk in &stats.disks {
+                    ui.label(&disk.filesystem);
+                    ui.label(&disk.size);
+                    ui.label(&disk.used);
+                    ui.label(&disk.available);
+                    ui.label(&disk.use_percent);
+                    ui.label(&disk.mount_point);
+                    ui.end_row();
+                }
+            });
+    });
+}
+
+fn format_kb(kb: u64) -> String {
+    if kb >= 1_048_576 {
+        format!("{:.1} GB", kb as f64 / 1_048_576.0)
+    } else if kb >= 1024 {
+        format!("{:.1} MB", kb as f64 / 1024.0)
+    } else {
+        format!("{kb} kB")
     }
 }
 
@@ -262,20 +449,59 @@ fn bordered_panel<R>(
         .inner
 }
 
-fn show_log_scroll(ui: &mut egui::Ui, lines: &VecDeque<CachedLogLine>, auto_scroll: bool) {
+fn vertical_resize_handle(
+    ui: &mut egui::Ui,
+    height: f32,
+    _max_stats_height: f32,
+) -> egui::Response {
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::drag());
+
+    if ui.is_rect_visible(rect) {
+        let color = if response.hovered() || response.dragged() {
+            ui.visuals().selection.stroke.color
+        } else {
+            ui.visuals().widgets.noninteractive.bg_stroke.color
+        };
+        let y = rect.center().y;
+        ui.painter()
+            .hline(rect.x_range(), y, egui::Stroke::new(1.0, color));
+    }
+
+    if response.hovered() || response.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+    }
+
+    response
+}
+
+fn show_log_scroll(
+    ui: &mut egui::Ui,
+    lines: &VecDeque<CachedLogLine>,
+    auto_scroll: bool,
+    scroll_id: egui::Id,
+) {
     ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
     let row_height = ui.text_style_height(&egui::TextStyle::Monospace);
     let total_rows = lines.len();
+    let scroll_height = ui.available_height().max(row_height);
 
-    egui::ScrollArea::vertical()
-        .stick_to_bottom(auto_scroll)
-        .auto_shrink([false, false])
-        .show_rows(ui, row_height, total_rows, |ui, row_range| {
-            for row in row_range {
-                let line = &lines[row];
-                ui.colored_label(log_level_color(line.level), &line.text);
-            }
-        });
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), scroll_height),
+        egui::Layout::top_down(egui::Align::LEFT),
+        |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(scroll_id)
+                .stick_to_bottom(auto_scroll)
+                .auto_shrink([false, false])
+                .show_rows(ui, row_height, total_rows, |ui, row_range| {
+                    for row in row_range {
+                        let line = &lines[row];
+                        ui.colored_label(log_level_color(line.level), &line.text);
+                    }
+                });
+        },
+    );
 }
 
 fn device_state_label(state: &DeviceState) -> &str {
