@@ -119,6 +119,7 @@ name = "adb-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossbeam-channel",
  "regex",
  "thiserror 2.0.20",
 ]

@@ -6,5 +6,6 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+crossbeam-channel.workspace = true
 regex.workspace = true
 thiserror.workspace = true
