@@ -5,6 +5,7 @@ use crossbeam_channel::Receiver;
 use eframe::egui;
 
 const MAX_LOG_LINES: usize = 10_000;
+const MAX_DRAIN_PER_FRAME: usize = 500;
 
 fn main() -> eframe::Result<()> {
     let adb_error = Adb::check_available().err().map(|e| e.to_string());
@@ -45,6 +46,21 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+#[derive(Clone)]
+struct CachedLogLine {
+    text: String,
+    level: char,
+}
+
+impl CachedLogLine {
+    fn from_entry(entry: &LogEntry) -> Self {
+        CachedLogLine {
+            text: entry.format_line(),
+            level: entry.level,
+        }
+    }
+}
+
 struct App {
     adb_error: Option<String>,
     devices: Vec<DeviceInfo>,
@@ -52,8 +68,8 @@ struct App {
     selected_serial: Option<String>,
     logcat_rx: Option<Receiver<LogEntry>>,
     logcat_stream: Option<LogcatStream>,
-    log_lines: VecDeque<LogEntry>,
-    error_lines: VecDeque<LogEntry>,
+    log_lines: VecDeque<CachedLogLine>,
+    error_lines: VecDeque<CachedLogLine>,
     logcat_error: Option<String>,
     auto_scroll: bool,
 }
@@ -92,9 +108,19 @@ impl App {
         self.logcat_stream = None;
     }
 
+    fn push_line(&mut self, entry: LogEntry) {
+        let cached = CachedLogLine::from_entry(&entry);
+        if entry.is_error_level() {
+            self.error_lines.push_back(cached.clone());
+            trim_buffer(&mut self.error_lines);
+        }
+        self.log_lines.push_back(cached);
+        trim_buffer(&mut self.log_lines);
+    }
+
     fn drain_logcat(&mut self) -> bool {
         let entries: Vec<LogEntry> = match self.logcat_rx.as_ref() {
-            Some(rx) => rx.try_iter().collect(),
+            Some(rx) => rx.try_iter().take(MAX_DRAIN_PER_FRAME).collect(),
             None => return false,
         };
 
@@ -103,18 +129,13 @@ impl App {
         }
 
         for entry in entries {
-            if entry.is_error_level() {
-                self.error_lines.push_back(entry.clone());
-                trim_buffer(&mut self.error_lines);
-            }
-            self.log_lines.push_back(entry);
-            trim_buffer(&mut self.log_lines);
+            self.push_line(entry);
         }
         true
     }
 }
 
-fn trim_buffer(buffer: &mut VecDeque<LogEntry>) {
+fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
     while buffer.len() > MAX_LOG_LINES {
         buffer.pop_front();
     }
@@ -157,14 +178,17 @@ impl eframe::App for App {
                 }
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for device in self.devices.clone() {
+                    let device_count = self.devices.len();
+                    for index in 0..device_count {
+                        let device = &self.devices[index];
                         let selected =
                             self.selected_serial.as_deref() == Some(device.serial.as_str());
                         let label = format!("{}\n{}", device.model, device.serial);
 
                         if device.state == DeviceState::Device {
                             if ui.selectable_label(selected, label).clicked() {
-                                self.select_device(device.serial);
+                                let serial = self.devices[index].serial.clone();
+                                self.select_device(serial);
                             }
                         } else {
                             ui.add_enabled_ui(false, |ui| {
@@ -238,14 +262,18 @@ fn bordered_panel<R>(
         .inner
 }
 
-fn show_log_scroll(ui: &mut egui::Ui, lines: &VecDeque<LogEntry>, auto_scroll: bool) {
+fn show_log_scroll(ui: &mut egui::Ui, lines: &VecDeque<CachedLogLine>, auto_scroll: bool) {
+    ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
+    let row_height = ui.text_style_height(&egui::TextStyle::Monospace);
+    let total_rows = lines.len();
+
     egui::ScrollArea::vertical()
         .stick_to_bottom(auto_scroll)
         .auto_shrink([false, false])
-        .show(ui, |ui| {
-            ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
-            for entry in lines {
-                ui.colored_label(log_level_color(entry.level), entry.format_line());
+        .show_rows(ui, row_height, total_rows, |ui, row_range| {
+            for row in row_range {
+                let line = &lines[row];
+                ui.colored_label(log_level_color(line.level), &line.text);
             }
         });
 }
