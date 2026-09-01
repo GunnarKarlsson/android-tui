@@ -91,6 +91,10 @@ impl LogcatStream {
 
     /// Stops the background logcat stream and waits for the reader thread to exit.
     pub fn stop(mut self) {
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
         let _ = self.stop_tx.send(());
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
@@ -100,7 +104,7 @@ impl LogcatStream {
 
 impl Drop for LogcatStream {
     fn drop(&mut self) {
-        let _ = self.stop_tx.send(());
+        self.shutdown();
     }
 }
 

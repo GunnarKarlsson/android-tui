@@ -74,7 +74,17 @@ impl App {
     pub fn refresh_devices(&mut self) {
         self.list_error = None;
         match Adb::list_devices() {
-            Ok(devices) => self.devices = devices,
+            Ok(devices) => {
+                self.devices = devices;
+                if let Some(serial) = &self.selected_serial {
+                    let still_connected = self.devices.iter().any(|device| {
+                        device.serial == *serial && device.state == DeviceState::Device
+                    });
+                    if !still_connected {
+                        self.deselect_device();
+                    }
+                }
+            }
             Err(err) => self.list_error = Some(err.to_string()),
         }
     }
@@ -84,9 +94,45 @@ impl App {
             return;
         }
 
-        self.stop_logcat();
-        self.stop_stats();
+        self.stop_streams();
+        self.clear_device_data();
         self.selected_serial = Some(serial.clone());
+        self.start_streams(&serial);
+    }
+
+    pub fn deselect_device(&mut self) {
+        if self.selected_serial.is_none() {
+            return;
+        }
+
+        self.stop_streams();
+        self.clear_device_data();
+        self.selected_serial = None;
+    }
+
+    pub fn shutdown(&mut self) {
+        self.stop_streams();
+    }
+
+    fn start_streams(&mut self, serial: &str) {
+        match LogcatStream::spawn(serial) {
+            Ok((rx, stream)) => {
+                self.logcat_rx = Some(rx);
+                self.logcat_stream = Some(stream);
+            }
+            Err(err) => self.logcat_error = Some(err.to_string()),
+        }
+
+        match StatsPoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.stats_rx = Some(rx);
+                self.stats_poller = Some(poller);
+            }
+            Err(err) => self.stats_error = Some(err.to_string()),
+        }
+    }
+
+    fn clear_device_data(&mut self) {
         self.log_lines.clear();
         self.error_lines.clear();
         self.logcat_error = None;
@@ -96,32 +142,25 @@ impl App {
         self.stats_error = None;
         self.network_stats = None;
         self.network_error = None;
+    }
 
-        match LogcatStream::spawn(&serial) {
-            Ok((rx, stream)) => {
-                self.logcat_rx = Some(rx);
-                self.logcat_stream = Some(stream);
-            }
-            Err(err) => self.logcat_error = Some(err.to_string()),
-        }
-
-        match StatsPoller::spawn(&serial) {
-            Ok((rx, poller)) => {
-                self.stats_rx = Some(rx);
-                self.stats_poller = Some(poller);
-            }
-            Err(err) => self.stats_error = Some(err.to_string()),
-        }
+    fn stop_streams(&mut self) {
+        self.stop_logcat();
+        self.stop_stats();
     }
 
     fn stop_stats(&mut self) {
+        if let Some(poller) = self.stats_poller.take() {
+            poller.stop();
+        }
         self.stats_rx = None;
-        self.stats_poller = None;
     }
 
     fn stop_logcat(&mut self) {
+        if let Some(stream) = self.logcat_stream.take() {
+            stream.stop();
+        }
         self.logcat_rx = None;
-        self.logcat_stream = None;
     }
 
     fn push_line(&mut self, entry: LogEntry) {
@@ -211,8 +250,12 @@ impl App {
 
                     if device.state == DeviceState::Device {
                         if ui.selectable_label(selected, label).clicked() {
-                            let serial = self.devices[index].serial.clone();
-                            self.select_device(serial);
+                            if selected {
+                                self.deselect_device();
+                            } else {
+                                let serial = self.devices[index].serial.clone();
+                                self.select_device(serial);
+                            }
                         }
                     } else {
                         ui.add_enabled_ui(false, |ui| {

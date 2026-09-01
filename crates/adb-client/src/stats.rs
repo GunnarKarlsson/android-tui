@@ -96,6 +96,10 @@ impl StatsPoller {
     }
 
     pub fn stop(mut self) {
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
         let _ = self.stop_tx.send(());
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
@@ -105,7 +109,7 @@ impl StatsPoller {
 
 impl Drop for StatsPoller {
     fn drop(&mut self) {
-        let _ = self.stop_tx.send(());
+        self.shutdown();
     }
 }
 
