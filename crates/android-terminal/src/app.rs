@@ -6,6 +6,8 @@ use adb_client::{
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
+use crate::panels;
+
 pub const MAX_LOG_LINES: usize = 10_000;
 const MAX_DRAIN_PER_FRAME: usize = 500;
 
@@ -20,10 +22,13 @@ pub struct App {
     pub stats_poller: Option<StatsPoller>,
     pub system_stats: Option<SystemStats>,
     pub stats_error: Option<String>,
+    pub network_stats: Option<Vec<panels::NetworkRow>>,
+    pub network_error: Option<String>,
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
     pub auto_scroll: bool,
+    pub logcat_filter: String,
 }
 
 #[derive(Clone)]
@@ -54,10 +59,13 @@ impl App {
             stats_poller: None,
             system_stats: None,
             stats_error: None,
+            network_stats: None,
+            network_error: None,
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
             auto_scroll: true,
+            logcat_filter: String::new(),
         }
     }
 
@@ -80,8 +88,11 @@ impl App {
         self.log_lines.clear();
         self.error_lines.clear();
         self.logcat_error = None;
+        self.logcat_filter.clear();
         self.system_stats = None;
         self.stats_error = None;
+        self.network_stats = None;
+        self.network_error = None;
 
         match LogcatStream::spawn(&serial) {
             Ok((rx, stream)) => {
