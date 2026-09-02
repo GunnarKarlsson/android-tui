@@ -518,13 +518,13 @@ impl App {
 
     fn show_devices_body(&mut self, ui: &mut egui::Ui) {
         if let Some(error) = &self.adb_error {
-            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), "ADB not available");
+            theme::error_label(ui, "ADB not available");
             ui.label(error);
             return;
         }
 
         if let Some(error) = &self.list_error {
-            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+            theme::error_label(ui, error);
         }
 
         if self.devices.is_empty() {

@@ -68,7 +68,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     }
 
     if let Some(error) = &app.logcat_error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
 
     if app.logcat_rx.is_none() {
@@ -116,7 +116,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
     }
 
     if let Some(error) = &app.error_logcat_error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
 
     if app.error_logcat_rx.is_none() {
@@ -151,13 +151,13 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
     }
 
     if let Some(error) = &app.stats_error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
     if let Some(error) = &app.storage_breakdown_error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
     if let Some(error) = &app.app_storage.error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
 
     egui::ScrollArea::both()
@@ -190,7 +190,7 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
     }
 
     if let Some(error) = &app.network_error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
 
     let Some(stats) = &app.network_stats else {
@@ -217,7 +217,7 @@ pub fn protocols(ui: &mut egui::Ui, app: &App) {
     }
 
     if let Some(error) = &app.protocol_error {
-        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        theme::error_label(ui, error);
     }
 
     let Some(stats) = &app.protocol_stats else {
@@ -522,18 +522,18 @@ fn show_log_scroll(
 
 fn log_level_color(level: char) -> egui::Color32 {
     match level {
-        'E' => egui::Color32::from_rgb(220, 80, 80),
-        'W' => egui::Color32::from_rgb(220, 180, 60),
-        'I' => egui::Color32::from_rgb(120, 180, 255),
-        'D' => egui::Color32::from_rgb(140, 140, 140),
-        'F' => egui::Color32::from_rgb(255, 60, 60),
-        _ => egui::Color32::GRAY,
+        'E' => theme::colors::LOG_ERROR,
+        'W' => theme::colors::LOG_WARNING,
+        'I' => theme::colors::LOG_INFO,
+        'D' => theme::colors::LOG_DEBUG,
+        'F' => theme::colors::LOG_FATAL,
+        _ => theme::colors::LOG_DEFAULT,
     }
 }
 
 fn error_line_color(level: char) -> egui::Color32 {
     match level {
-        'F' => egui::Color32::from_rgb(255, 60, 60),
-        _ => egui::Color32::from_rgb(220, 80, 80),
+        'F' => theme::colors::LOG_FATAL,
+        _ => theme::colors::LOG_ERROR,
     }
 }

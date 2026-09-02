@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui_tiles::{Behavior, TileId, Tree, UiResponse};
+use egui_tiles::{Behavior, ResizeState, TileId, Tree, UiResponse};
 
 use crate::app::App;
 use crate::panels;
@@ -55,6 +55,16 @@ struct AppTilesBehavior<'a> {
 impl Behavior<PanelId> for AppTilesBehavior<'_> {
     fn tab_title_for_pane(&mut self, pane: &PanelId) -> egui::WidgetText {
         pane.title().into()
+    }
+
+    fn resize_stroke(&self, style: &egui::Style, resize_state: ResizeState) -> egui::Stroke {
+        let color = theme::colors::PANEL_SPLITTER;
+        let width = match resize_state {
+            ResizeState::Idle => self.gap_width(style),
+            ResizeState::Hovering => style.visuals.widgets.hovered.fg_stroke.width.max(1.0),
+            ResizeState::Dragging => style.visuals.widgets.active.fg_stroke.width.max(2.0),
+        };
+        egui::Stroke::new(width, color)
     }
 
     fn pane_ui(

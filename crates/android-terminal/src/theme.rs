@@ -11,6 +11,36 @@ const JETBRAINS_MONO: &[u8] =
 const JETBRAINS_MONO_BOLD: &[u8] =
     include_bytes!("../assets/fonts/JetBrainsMonoNerdFont-Bold.ttf");
 
+/// All UI colors are defined here once.
+pub mod colors {
+    use egui::Color32;
+
+    pub const BG: Color32 = Color32::from_rgb(10, 24, 52);
+    pub const BG_WIDGET: Color32 = Color32::from_rgb(18, 40, 78);
+    pub const BG_HOVER: Color32 = Color32::from_rgb(28, 56, 104);
+    pub const BG_EXTREME: Color32 = Color32::from_rgb(6, 16, 36);
+    pub const BG_FAINT: Color32 = Color32::from_rgb(16, 36, 72);
+
+    /// Text and widget foreground.
+    pub const OFF_WHITE: Color32 = Color32::from_rgb(232, 232, 228);
+    /// Grabbable panel splitters.
+    pub const PANEL_SPLITTER: Color32 = Color32::WHITE;
+    /// Selected icon toggle / selection fill.
+    pub const SELECTION: Color32 = Color32::from_rgb(40, 80, 160);
+
+    pub const ERROR: Color32 = Color32::from_rgb(220, 80, 80);
+    pub const LOG_ERROR: Color32 = ERROR;
+    pub const LOG_WARNING: Color32 = Color32::from_rgb(220, 180, 60);
+    pub const LOG_INFO: Color32 = Color32::from_rgb(120, 180, 255);
+    pub const LOG_DEBUG: Color32 = Color32::from_rgb(140, 140, 140);
+    pub const LOG_FATAL: Color32 = Color32::from_rgb(255, 60, 60);
+    pub const LOG_DEFAULT: Color32 = Color32::GRAY;
+
+    pub fn panel_separator() -> Color32 {
+        OFF_WHITE.gamma_multiply(0.35)
+    }
+}
+
 /// Apply app-wide egui styling. Called once at startup from the eframe creation hook.
 pub fn configure(ctx: &Context) {
     install_fonts(ctx);
@@ -43,42 +73,56 @@ fn apply_shared_style(style: &mut egui::Style) {
         .insert(TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace));
 }
 
+/// Show an error label using the theme error color.
+pub fn error_label(ui: &mut Ui, text: impl AsRef<str>) {
+    ui.colored_label(colors::ERROR, text.as_ref());
+}
+
+fn panel_separator(ui: &mut Ui) {
+    let spacing = ui.spacing().item_spacing.y;
+    let (rect, response) = ui.allocate_at_least(egui::vec2(ui.available_width(), spacing), egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().hline(
+            rect.x_range(),
+            rect.center().y,
+            egui::Stroke::new(1.0, colors::panel_separator()),
+        );
+    }
+    ui.advance_cursor_after_rect(response.rect);
+}
+
 fn dark_blue_visuals() -> egui::Visuals {
     let mut visuals = egui::Visuals::dark();
 
-    let bg = egui::Color32::from_rgb(10, 24, 52);
-    let bg_widget = egui::Color32::from_rgb(18, 40, 78);
-    let bg_hover = egui::Color32::from_rgb(28, 56, 104);
-    let bg_extreme = egui::Color32::from_rgb(6, 16, 36);
-    let bg_faint = egui::Color32::from_rgb(16, 36, 72);
-    let white = egui::Color32::WHITE;
+    visuals.panel_fill = colors::BG;
+    visuals.window_fill = colors::BG;
+    visuals.extreme_bg_color = colors::BG_EXTREME;
+    visuals.faint_bg_color = colors::BG_FAINT;
+    visuals.code_bg_color = colors::BG_EXTREME;
+    visuals.override_text_color = Some(colors::OFF_WHITE);
+    visuals.selection.bg_fill = colors::SELECTION;
 
-    visuals.panel_fill = bg;
-    visuals.window_fill = bg;
-    visuals.extreme_bg_color = bg_extreme;
-    visuals.faint_bg_color = bg_faint;
-    visuals.code_bg_color = bg_extreme;
-    visuals.selection.bg_fill = egui::Color32::from_rgb(40, 80, 160);
+    visuals.widgets.noninteractive.bg_fill = colors::BG;
+    visuals.widgets.noninteractive.weak_bg_fill = colors::BG;
+    visuals.widgets.noninteractive.fg_stroke.color = colors::OFF_WHITE;
+    visuals.widgets.noninteractive.bg_stroke =
+        egui::Stroke::new(1.0, colors::PANEL_SPLITTER);
 
-    visuals.widgets.noninteractive.bg_fill = bg;
-    visuals.widgets.noninteractive.weak_bg_fill = bg;
-    visuals.widgets.noninteractive.fg_stroke.color = white;
+    visuals.widgets.inactive.bg_fill = colors::BG_WIDGET;
+    visuals.widgets.inactive.weak_bg_fill = colors::BG_WIDGET;
+    visuals.widgets.inactive.fg_stroke.color = colors::OFF_WHITE;
 
-    visuals.widgets.inactive.bg_fill = bg_widget;
-    visuals.widgets.inactive.weak_bg_fill = bg_widget;
-    visuals.widgets.inactive.fg_stroke.color = white;
+    visuals.widgets.hovered.bg_fill = colors::BG_HOVER;
+    visuals.widgets.hovered.weak_bg_fill = colors::BG_HOVER;
+    visuals.widgets.hovered.fg_stroke.color = colors::OFF_WHITE;
 
-    visuals.widgets.hovered.bg_fill = bg_hover;
-    visuals.widgets.hovered.weak_bg_fill = bg_hover;
-    visuals.widgets.hovered.fg_stroke.color = white;
+    visuals.widgets.active.bg_fill = colors::BG_HOVER;
+    visuals.widgets.active.weak_bg_fill = colors::BG_HOVER;
+    visuals.widgets.active.fg_stroke.color = colors::OFF_WHITE;
 
-    visuals.widgets.active.bg_fill = bg_hover;
-    visuals.widgets.active.weak_bg_fill = bg_hover;
-    visuals.widgets.active.fg_stroke.color = white;
-
-    visuals.widgets.open.bg_fill = bg_widget;
-    visuals.widgets.open.weak_bg_fill = bg_widget;
-    visuals.widgets.open.fg_stroke.color = white;
+    visuals.widgets.open.bg_fill = colors::BG_WIDGET;
+    visuals.widgets.open.weak_bg_fill = colors::BG_WIDGET;
+    visuals.widgets.open.fg_stroke.color = colors::OFF_WHITE;
 
     visuals
 }
@@ -228,7 +272,7 @@ pub fn panel_with_header_actions<R>(
                 ui.heading(title);
                 add_header_actions(ui);
             });
-            ui.separator();
+            panel_separator(ui);
             add_body(ui)
         })
         .inner
