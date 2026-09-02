@@ -173,7 +173,7 @@ fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {
                     ui.end_row();
 
                     for app in &stats.apps {
-                        ui.label(app.packages.join(", "));
+                        ui.label(&app.package);
                         ui.label(format_bytes(app.total_bytes));
                         ui.label(format_bytes(app.foreground_bytes));
                         ui.label(format_bytes(app.background_bytes));
