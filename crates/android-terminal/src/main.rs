@@ -34,9 +34,12 @@ impl eframe::App for TerminalApp {
         eframe::egui::SidePanel::left("devices")
             .resizable(true)
             .default_width(260.0)
+            .show_separator_line(false)
             .frame(theme::shell_frame(ctx))
             .show(ctx, |ui| {
-                self.inner.show_devices(ui);
+                theme::canvas_margin_frame().show(ui, |ui| {
+                    self.inner.show_devices(ui);
+                });
             });
 
         eframe::egui::CentralPanel::default()
@@ -47,7 +50,9 @@ impl eframe::App for TerminalApp {
                     return;
                 }
 
-                tiles::show(ui, &mut self.tile_tree, &mut self.inner);
+                theme::canvas_margin_frame().show(ui, |ui| {
+                    tiles::show(ui, &mut self.tile_tree, &mut self.inner);
+                });
             });
     }
 

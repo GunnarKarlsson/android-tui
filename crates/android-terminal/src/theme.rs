@@ -20,11 +20,17 @@ pub mod colors {
     pub const BG_HOVER: Color32 = Color32::from_rgb(28, 56, 104);
     pub const BG_EXTREME: Color32 = Color32::from_rgb(6, 16, 36);
     pub const BG_FAINT: Color32 = Color32::from_rgb(16, 36, 72);
+    /// Panel card fill.
+    pub const PANEL_BG: Color32 = Color32::from_rgb(12, 22, 40);
+    /// Thin outline around each panel card.
+    pub const PANEL_BORDER: Color32 = Color32::from_rgb(58, 64, 74);
 
     /// Text and widget foreground.
     pub const OFF_WHITE: Color32 = Color32::from_rgb(232, 232, 228);
-    /// Grabbable panel splitters.
-    pub const PANEL_SPLITTER: Color32 = Color32::WHITE;
+    /// Resize handle highlight (gap stays empty when idle).
+    pub const PANEL_SPLITTER_HOVER: Color32 = Color32::from_rgb(96, 102, 112);
+    /// Header rule inside a panel card.
+    pub const PANEL_SEPARATOR: Color32 = Color32::from_rgb(56, 62, 72);
     /// Selected icon toggle / selection fill.
     pub const SELECTION: Color32 = Color32::from_rgb(40, 80, 160);
 
@@ -35,11 +41,19 @@ pub mod colors {
     pub const LOG_DEBUG: Color32 = Color32::from_rgb(140, 140, 140);
     pub const LOG_FATAL: Color32 = Color32::from_rgb(255, 60, 60);
     pub const LOG_DEFAULT: Color32 = Color32::GRAY;
-
-    pub fn panel_separator() -> Color32 {
-        OFF_WHITE.gamma_multiply(0.35)
-    }
 }
+
+/// Corner radius for panel cards.
+pub const PANEL_CORNER_RADIUS: u8 = 10;
+
+/// Empty space between adjacent panel cards (canvas shows through).
+pub const PANEL_GAP: f32 = 12.0;
+
+/// Padding inside a panel card, around title and body.
+pub const PANEL_INNER_PADDING: i8 = 8;
+
+/// Padding between the window edge and panel cards.
+pub const PANEL_CANVAS_MARGIN: i8 = 12;
 
 /// Apply app-wide egui styling. Called once at startup from the eframe creation hook.
 pub fn configure(ctx: &Context) {
@@ -51,8 +65,7 @@ pub fn configure(ctx: &Context) {
 }
 
 fn apply_shared_style(style: &mut egui::Style) {
-    // Single padding used by every panel (header, body, all four sides).
-    style.spacing.window_margin = egui::Margin::same(8);
+    style.spacing.window_margin = egui::Margin::same(PANEL_INNER_PADDING);
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
 
     let bold = FontFamily::Name("jetbrains_mono_bold".into());
@@ -85,7 +98,7 @@ fn panel_separator(ui: &mut Ui) {
         ui.painter().hline(
             rect.x_range(),
             rect.center().y,
-            egui::Stroke::new(1.0, colors::panel_separator()),
+            egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
         );
     }
     ui.advance_cursor_after_rect(response.rect);
@@ -105,8 +118,7 @@ fn dark_blue_visuals() -> egui::Visuals {
     visuals.widgets.noninteractive.bg_fill = colors::BG;
     visuals.widgets.noninteractive.weak_bg_fill = colors::BG;
     visuals.widgets.noninteractive.fg_stroke.color = colors::OFF_WHITE;
-    visuals.widgets.noninteractive.bg_stroke =
-        egui::Stroke::new(1.0, colors::PANEL_SPLITTER);
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
 
     visuals.widgets.inactive.bg_fill = colors::BG_WIDGET;
     visuals.widgets.inactive.weak_bg_fill = colors::BG_WIDGET;
@@ -157,10 +169,22 @@ fn install_fonts(ctx: &Context) {
     ctx.set_fonts(fonts);
 }
 
-/// Outer frame for SidePanel / CentralPanel.
-/// Zero inner margin so [`panel`] is the only source of padding.
-pub fn shell_frame(ctx: &Context) -> egui::Frame {
-    egui::Frame::NONE.fill(ctx.style().visuals.panel_fill)
+/// Dark canvas behind panel cards.
+pub fn shell_frame(_ctx: &Context) -> egui::Frame {
+    egui::Frame::NONE.fill(colors::BG_EXTREME)
+}
+
+/// Insets panel cards from the window edge.
+pub fn canvas_margin_frame() -> egui::Frame {
+    egui::Frame::NONE.inner_margin(egui::Margin::same(PANEL_CANVAS_MARGIN))
+}
+
+fn panel_frame(ui: &Ui) -> egui::Frame {
+    egui::Frame::default()
+        .fill(colors::PANEL_BG)
+        .stroke(egui::Stroke::new(1.0, colors::PANEL_BORDER))
+        .corner_radius(egui::CornerRadius::same(PANEL_CORNER_RADIUS))
+        .inner_margin(panel_padding(ui))
 }
 
 fn panel_padding(ui: &Ui) -> egui::Margin {
@@ -265,8 +289,7 @@ pub fn panel_with_header_actions<R>(
     add_header_actions: impl FnOnce(&mut Ui),
     add_body: impl FnOnce(&mut Ui) -> R,
 ) -> R {
-    egui::Frame::NONE
-        .inner_margin(panel_padding(ui))
+    panel_frame(ui)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading(title);

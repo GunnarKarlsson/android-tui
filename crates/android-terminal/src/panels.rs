@@ -258,11 +258,11 @@ fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {
 
                     for app in &stats.apps {
                         ui.label(&app.package);
-                        ui.label(format_bytes(app.total_bytes));
-                        ui.label(format_bytes(app.foreground_bytes));
-                        ui.label(format_bytes(app.background_bytes));
-                        ui.label(format_bytes(app.wifi_bytes));
-                        ui.label(format_bytes(app.mobile_bytes));
+                        ui.label(format_bytes_mb(app.total_bytes));
+                        ui.label(format_bytes_mb(app.foreground_bytes));
+                        ui.label(format_bytes_mb(app.background_bytes));
+                        ui.label(format_bytes_mb(app.wifi_bytes));
+                        ui.label(format_bytes_mb(app.mobile_bytes));
                         ui.end_row();
                     }
                 });
@@ -350,7 +350,7 @@ fn show_app_storage(ui: &mut egui::Ui, storage: &AppStorageState) {
             for (package, bytes) in storage.sorted_rows() {
                 ui.label(truncate_package_name(package)).on_hover_text(package);
                 ui.label(match bytes {
-                    Some(value) => format_bytes(value),
+                            Some(value) => format_bytes_mb(value),
                     None => "…".to_string(),
                 });
                 ui.end_row();
@@ -406,9 +406,9 @@ pub fn network_rows_from_stats(stats: &NetworkStats) -> Vec<NetworkRow> {
         .map(|iface| NetworkRow {
             interface: iface.interface.clone(),
             transport: iface.transport.clone(),
-            rx: format_bytes(iface.rx_bytes),
-            tx: format_bytes(iface.tx_bytes),
-            rate: format_rate(iface.rx_rate_bps, iface.tx_rate_bps),
+            rx: format_bytes_mb(iface.rx_bytes),
+            tx: format_bytes_mb(iface.tx_bytes),
+            rate: format_rate_mb(iface.rx_rate_bps, iface.tx_rate_bps),
         })
         .collect()
 }
@@ -421,6 +421,29 @@ fn truncate_package_name(name: &str) -> String {
     format!("{}...", &name[..MAX_LEN - 3])
 }
 
+fn format_bytes_mb(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else {
+        format!("{:.2} MB", bytes as f64 / 1_048_576.0)
+    }
+}
+
+fn format_rate_mb(rx_bps: f64, tx_bps: f64) -> String {
+    format!(
+        "↓ {}  ↑ {}",
+        format_throughput_mb(rx_bps),
+        format_throughput_mb(tx_bps)
+    )
+}
+
+fn format_throughput_mb(bps: f64) -> String {
+    if bps < 0.0 {
+        return "—".to_string();
+    }
+    format!("{:.2} MB/s", bps / 1_048_576.0)
+}
+
 fn format_bytes(bytes: u64) -> String {
     if bytes >= 1_073_741_824 {
         format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
@@ -430,23 +453,6 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
-    }
-}
-
-fn format_rate(rx_bps: f64, tx_bps: f64) -> String {
-    format!("↓ {}  ↑ {}", format_throughput(rx_bps), format_throughput(tx_bps))
-}
-
-fn format_throughput(bps: f64) -> String {
-    if bps < 0.0 {
-        return "—".to_string();
-    }
-    if bps >= 1_048_576.0 {
-        format!("{:.1} MB/s", bps / 1_048_576.0)
-    } else if bps >= 1024.0 {
-        format!("{:.1} KB/s", bps / 1024.0)
-    } else {
-        format!("{:.0} B/s", bps)
     }
 }
 

@@ -57,14 +57,17 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         pane.title().into()
     }
 
-    fn resize_stroke(&self, style: &egui::Style, resize_state: ResizeState) -> egui::Stroke {
-        let color = theme::colors::PANEL_SPLITTER;
-        let width = match resize_state {
-            ResizeState::Idle => self.gap_width(style),
-            ResizeState::Hovering => style.visuals.widgets.hovered.fg_stroke.width.max(1.0),
-            ResizeState::Dragging => style.visuals.widgets.active.fg_stroke.width.max(2.0),
-        };
-        egui::Stroke::new(width, color)
+    fn gap_width(&self, _style: &egui::Style) -> f32 {
+        theme::PANEL_GAP
+    }
+
+    fn resize_stroke(&self, _style: &egui::Style, resize_state: ResizeState) -> egui::Stroke {
+        match resize_state {
+            ResizeState::Idle => egui::Stroke::NONE,
+            ResizeState::Hovering | ResizeState::Dragging => {
+                egui::Stroke::new(1.0, theme::colors::PANEL_SPLITTER_HOVER)
+            }
+        }
     }
 
     fn pane_ui(
