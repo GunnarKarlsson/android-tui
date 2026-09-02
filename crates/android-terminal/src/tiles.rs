@@ -3,6 +3,7 @@ use egui_tiles::{Behavior, TileId, Tree, UiResponse};
 
 use crate::app::App;
 use crate::panels;
+use crate::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelId {
@@ -61,12 +62,12 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         ui.heading(pane.title());
         ui.separator();
 
-        match pane {
+        theme::panel_content(ui, |ui| match pane {
             PanelId::LogcatAll => panels::logcat_all(ui, self.app),
             PanelId::LogcatErrors => panels::logcat_errors(ui, self.app),
             PanelId::SystemStats => panels::memory_disk(ui, self.app),
             PanelId::Network => panels::network(ui, self.app),
-        }
+        });
 
         UiResponse::None
     }

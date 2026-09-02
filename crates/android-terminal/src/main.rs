@@ -1,5 +1,6 @@
 mod app;
 mod panels;
+mod theme;
 mod tiles;
 
 use adb_client::{Adb, DeviceInfo};
@@ -71,7 +72,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Android Terminal",
         options,
-        Box::new(|_cc| {
+        Box::new(|cc| {
+            theme::configure(&cc.egui_ctx);
+
             let (devices, list_error) = if adb_error.is_none() {
                 match Adb::list_devices() {
                     Ok(devices) => (devices, None),
