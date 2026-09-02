@@ -183,6 +183,105 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
         });
 }
 
+pub fn ram_gauge(ui: &mut egui::Ui, app: &App) {
+    theme::panel(ui, "RAM", |ui| {
+        if app.selected_serial.is_none() {
+            theme::panel_loading(ui);
+            return;
+        }
+
+        if let Some(error) = &app.ram_error {
+            theme::error_label(ui, error);
+        }
+
+        let Some(memory) = &app.ram_memory else {
+            if app.ram_rx.is_some() {
+                theme::panel_loading(ui);
+            } else {
+                theme::panel_loading(ui);
+            }
+            return;
+        };
+
+        show_ram_donut(ui, memory);
+    });
+}
+
+fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
+    let fraction = memory.used_fraction();
+    let percent = (fraction * 100.0).round() as u32;
+    let chart_height = ui.available_height().max(120.0);
+
+    let (rect, _response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), chart_height),
+        egui::Sense::hover(),
+    );
+
+    let painter = ui.painter_at(rect);
+    paint_ram_donut(&painter, rect, fraction);
+
+    let center = rect.center();
+    painter.text(
+        center + egui::vec2(0.0, -8.0),
+        egui::Align2::CENTER_CENTER,
+        format!("{percent}%"),
+        egui::FontId::proportional(28.0),
+        theme::colors::OFF_WHITE,
+    );
+    painter.text(
+        center + egui::vec2(0.0, 18.0),
+        egui::Align2::CENTER_CENTER,
+        format!(
+            "{} / {}",
+            format_gb_from_kb(memory.used_kb()),
+            format_gb_from_kb(memory.total_kb),
+        ),
+        egui::FontId::proportional(12.0),
+        theme::colors::LOG_DEBUG,
+    );
+}
+
+fn paint_ram_donut(painter: &egui::Painter, rect: egui::Rect, fraction: f32) {
+    use std::f32::consts::TAU;
+
+    let center = rect.center();
+    let size = rect.width().min(rect.height());
+    let radius = size * 0.38;
+    let stroke_width = size * 0.12;
+
+    painter.circle_stroke(
+        center,
+        radius,
+        egui::Stroke::new(stroke_width, theme::colors::RAM_TRACK),
+    );
+
+    let used = fraction.clamp(0.0, 1.0);
+    if used > 0.0 {
+        let start = -TAU / 4.0;
+        let sweep = used * TAU;
+        let points = arc_points(center, radius, start, sweep, 64);
+        painter.add(egui::Shape::Path(egui::epaint::PathShape {
+            points,
+            closed: false,
+            fill: egui::Color32::TRANSPARENT,
+            stroke: egui::Stroke::new(stroke_width, theme::colors::RAM_USED).into(),
+        }));
+    }
+}
+
+fn arc_points(center: egui::Pos2, radius: f32, start: f32, sweep: f32, steps: usize) -> Vec<egui::Pos2> {
+    (0..=steps)
+        .map(|step| {
+            let angle = start + sweep * step as f32 / steps as f32;
+            center + egui::vec2(angle.cos(), angle.sin()) * radius
+        })
+        .collect()
+}
+
+fn format_gb_from_kb(kb: u64) -> String {
+    format!("{:.1} GB", kb as f64 / 1_048_576.0)
+}
+
 pub fn network(ui: &mut egui::Ui, app: &App) {
     if app.selected_serial.is_none() {
         theme::panel_loading(ui);

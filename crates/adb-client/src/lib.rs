@@ -8,6 +8,7 @@ mod error;
 mod logcat;
 mod network;
 mod protocols;
+mod ram;
 mod stats;
 mod storage_breakdown;
 
@@ -18,6 +19,7 @@ pub use error::AdbError;
 pub use logcat::{LogEntry, LogcatStream};
 pub use network::{NetworkInterfaceStats, NetworkPoller, NetworkStats, NetworkUpdate};
 pub use protocols::{AppTraffic, ProtocolPoller, ProtocolStats, ProtocolUpdate};
+pub use ram::{RamPoller, RamUpdate};
 pub use stats::{MemoryStats, StatsPoller, StatsUpdate, SystemStats};
 pub use storage_breakdown::{
     StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate, StorageCategory,

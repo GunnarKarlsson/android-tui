@@ -3,8 +3,9 @@ use std::time::Duration;
 
 use adb_client::{
     Adb, AppStoragePoller, AppStorageUpdate, DeviceInfo, DeviceState, LogEntry, LogcatStream,
-    NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate, StatsPoller,
-    StatsUpdate, StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate, SystemStats,
+    MemoryStats, NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate,
+    RamPoller, RamUpdate, StatsPoller, StatsUpdate, StorageBreakdown, StorageBreakdownPoller,
+    StorageBreakdownUpdate, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -43,6 +44,10 @@ pub struct App {
     pub storage_breakdown_poller: Option<StorageBreakdownPoller>,
     pub storage_breakdown: Option<StorageBreakdown>,
     pub storage_breakdown_error: Option<String>,
+    pub ram_rx: Option<Receiver<RamUpdate>>,
+    pub ram_poller: Option<RamPoller>,
+    pub ram_memory: Option<MemoryStats>,
+    pub ram_error: Option<String>,
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
@@ -116,6 +121,10 @@ impl App {
             storage_breakdown_poller: None,
             storage_breakdown: None,
             storage_breakdown_error: None,
+            ram_rx: None,
+            ram_poller: None,
+            ram_memory: None,
+            ram_error: None,
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
@@ -208,6 +217,14 @@ impl App {
             Err(err) => self.stats_error = Some(err.user_message()),
         }
 
+        match RamPoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.ram_rx = Some(rx);
+                self.ram_poller = Some(poller);
+            }
+            Err(err) => self.ram_error = Some(err.user_message()),
+        }
+
         match StorageBreakdownPoller::spawn(serial) {
             Ok((rx, poller)) => {
                 self.storage_breakdown_rx = Some(rx);
@@ -259,11 +276,14 @@ impl App {
         self.app_storage = panels::AppStorageState::default();
         self.storage_breakdown = None;
         self.storage_breakdown_error = None;
+        self.ram_memory = None;
+        self.ram_error = None;
     }
 
     fn stop_streams(&mut self) {
         self.stop_logcat();
         self.stop_stats();
+        self.stop_ram();
         self.stop_network();
         self.stop_protocols();
         self.stop_app_storage();
@@ -303,6 +323,13 @@ impl App {
             poller.stop();
         }
         self.stats_rx = None;
+    }
+
+    fn stop_ram(&mut self) {
+        if let Some(poller) = self.ram_poller.take() {
+            poller.stop();
+        }
+        self.ram_rx = None;
     }
 
     fn stop_logcat(&mut self) {
@@ -468,6 +495,28 @@ impl App {
         updated
     }
 
+    fn drain_ram(&mut self) -> bool {
+        let Some(rx) = self.ram_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                RamUpdate::Memory(memory) => {
+                    self.ram_memory = Some(memory);
+                    self.ram_error = None;
+                    updated = true;
+                }
+                RamUpdate::Error(message) => {
+                    self.ram_error = Some(message);
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
@@ -477,6 +526,9 @@ impl App {
             needs_repaint = true;
         }
         if self.drain_stats() {
+            needs_repaint = true;
+        }
+        if self.drain_ram() {
             needs_repaint = true;
         }
         if self.drain_network() {
@@ -497,6 +549,27 @@ impl App {
         if self.selected_serial.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
+    }
+
+    pub fn show_sidebar(&mut self, ui: &mut egui::Ui) {
+        const RAM_PANEL_HEIGHT: f32 = 220.0;
+        let gap = theme::PANEL_GAP;
+        let devices_height = (ui.available_height() - RAM_PANEL_HEIGHT - gap).max(120.0);
+
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), devices_height),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| {
+                ui.set_min_height(devices_height);
+                self.show_devices(ui);
+            },
+        );
+        ui.add_space(gap);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), RAM_PANEL_HEIGHT),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| panels::ram_gauge(ui, self),
+        );
     }
 
     pub fn show_devices(&mut self, ui: &mut egui::Ui) {

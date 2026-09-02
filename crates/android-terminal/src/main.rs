@@ -38,7 +38,7 @@ impl eframe::App for TerminalApp {
             .frame(theme::shell_frame(ctx))
             .show(ctx, |ui| {
                 theme::canvas_margin_frame().show(ui, |ui| {
-                    self.inner.show_devices(ui);
+                    self.inner.show_sidebar(ui);
                 });
             });
 

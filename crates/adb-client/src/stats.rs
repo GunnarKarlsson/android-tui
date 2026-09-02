@@ -121,9 +121,13 @@ impl Drop for StatsPoller {
     }
 }
 
-pub(crate) fn fetch_system_stats(serial: &str) -> Result<SystemStats, AdbError> {
+pub fn fetch_memory_stats(serial: &str) -> Result<MemoryStats, AdbError> {
     let meminfo = run_adb_for_serial(serial, &["shell", "cat", "/proc/meminfo"])?;
-    let memory = parse_meminfo(&String::from_utf8_lossy(&meminfo.stdout))?;
+    parse_meminfo(&String::from_utf8_lossy(&meminfo.stdout))
+}
+
+pub(crate) fn fetch_system_stats(serial: &str) -> Result<SystemStats, AdbError> {
+    let memory = fetch_memory_stats(serial)?;
 
     Ok(SystemStats {
         memory,

@@ -41,6 +41,9 @@ pub mod colors {
     pub const LOG_DEBUG: Color32 = Color32::from_rgb(140, 140, 140);
     pub const LOG_FATAL: Color32 = Color32::from_rgb(255, 60, 60);
     pub const LOG_DEFAULT: Color32 = Color32::GRAY;
+
+    pub const RAM_USED: Color32 = Color32::from_rgb(80, 200, 220);
+    pub const RAM_TRACK: Color32 = Color32::from_rgb(40, 50, 65);
 }
 
 /// Corner radius for panel cards.
