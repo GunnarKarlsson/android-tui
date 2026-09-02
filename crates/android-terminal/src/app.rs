@@ -30,7 +30,7 @@ pub struct App {
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
-    pub auto_scroll: bool,
+    pub auto_update_feed: bool,
     pub logcat_filter: String,
     pub error_logcat_filter: String,
 }
@@ -70,7 +70,7 @@ impl App {
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
-            auto_scroll: true,
+            auto_update_feed: true,
             logcat_filter: String::new(),
             error_logcat_filter: String::new(),
         }
@@ -195,11 +195,16 @@ impl App {
     }
 
     fn drain_logcat(&mut self) -> bool {
-        let entries: Vec<LogEntry> = match self.logcat_rx.as_ref() {
-            Some(rx) => rx.try_iter().take(MAX_DRAIN_PER_FRAME).collect(),
-            None => return false,
+        let Some(rx) = self.logcat_rx.as_ref() else {
+            return false;
         };
 
+        if !self.auto_update_feed {
+            while rx.try_recv().is_ok() {}
+            return false;
+        }
+
+        let entries: Vec<LogEntry> = rx.try_iter().take(MAX_DRAIN_PER_FRAME).collect();
         if entries.is_empty() {
             return false;
         }

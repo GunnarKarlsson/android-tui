@@ -7,7 +7,7 @@ use crate::app::{App, CachedLogLine};
 
 pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.auto_scroll, "Auto-scroll");
+        ui.checkbox(&mut app.auto_update_feed, "Auto-update feed");
     });
     ui.horizontal(|ui| {
         ui.label("Filter:");
@@ -40,7 +40,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         ui,
         &app.log_lines,
         &matching,
-        app.auto_scroll,
+        app.auto_update_feed,
         egui::Id::new("logcat_all_scroll"),
         LogScrollStyle::ByLevel,
     );
@@ -78,7 +78,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         ui,
         &app.error_lines,
         &matching,
-        app.auto_scroll,
+        app.auto_update_feed,
         egui::Id::new("logcat_errors_scroll"),
         LogScrollStyle::ErrorsOnly,
     );
@@ -327,7 +327,7 @@ fn show_log_scroll(
     ui: &mut egui::Ui,
     lines: &VecDeque<CachedLogLine>,
     matching: &[usize],
-    auto_scroll: bool,
+    stick_to_bottom: bool,
     scroll_id: egui::Id,
     style: LogScrollStyle,
 ) {
@@ -337,7 +337,7 @@ fn show_log_scroll(
 
     egui::ScrollArea::vertical()
         .id_salt(scroll_id)
-        .stick_to_bottom(auto_scroll)
+        .stick_to_bottom(stick_to_bottom)
         .auto_shrink([false, false])
         .show_rows(ui, row_height, total_rows, |ui, row_range| {
             for row in row_range {
