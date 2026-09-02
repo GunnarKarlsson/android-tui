@@ -11,6 +11,7 @@ pub enum PanelId {
     LogcatErrors,
     SystemStats,
     Network,
+    Protocols,
 }
 
 impl PanelId {
@@ -20,6 +21,7 @@ impl PanelId {
             PanelId::LogcatErrors => "Logcat (Errors)",
             PanelId::SystemStats => "Memory / Disk",
             PanelId::Network => "Network Activity",
+            PanelId::Protocols => "Protocols",
         }
     }
 }
@@ -31,9 +33,11 @@ pub fn create_default_tree() -> Tree<PanelId> {
     let logcat_errors = tiles.insert_pane(PanelId::LogcatErrors);
     let system_stats = tiles.insert_pane(PanelId::SystemStats);
     let network = tiles.insert_pane(PanelId::Network);
+    let protocols = tiles.insert_pane(PanelId::Protocols);
 
     let top_row = tiles.insert_horizontal_tile(vec![logcat_all, logcat_errors]);
-    let bottom_row = tiles.insert_horizontal_tile(vec![system_stats, network]);
+    let network_column = tiles.insert_vertical_tile(vec![network, protocols]);
+    let bottom_row = tiles.insert_horizontal_tile(vec![system_stats, network_column]);
     let root = tiles.insert_vertical_tile(vec![top_row, bottom_row]);
 
     Tree::new("android_terminal_tiles", root, tiles)
@@ -95,6 +99,9 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
             }
             PanelId::Network => {
                 theme::panel(ui, pane.title(), |ui| panels::network(ui, self.app));
+            }
+            PanelId::Protocols => {
+                theme::panel(ui, pane.title(), |ui| panels::protocols(ui, self.app));
             }
         }
 

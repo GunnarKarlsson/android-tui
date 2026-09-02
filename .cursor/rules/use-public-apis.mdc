@@ -1,0 +1,34 @@
+---
+description: Use a library's public API first. Do not patch around it.
+alwaysApply: true
+---
+
+# Use public APIs, not workarounds
+
+Before changing colors, layout, widgets, or framework behavior, read how that library is supposed to do it. Use that API. Do not invent a local patch, then "fix" it when it fails.
+
+## Do this
+
+1. Find the first-class API (docs, crate source, or existing project usage).
+2. Implement with that API.
+3. If it still fails, you used it wrong or the version differs. Re-read. Do not paper over it.
+
+## Do not do this
+
+- Mutate whatever object is in reach (`set_style` on the active style, hardcoded colors on one widget, extra draw calls) because it looks faster.
+- Stamp the same values onto every code path so an official switch cannot fire.
+- Re-apply a setting every frame to beat framework defaults.
+- Promise a process change in chat. Put it in a rule or just do the work.
+
+## Example (egui 0.31)
+
+```rust
+// Wrong: writes the current style only. System light theme replaces it next frame.
+ctx.set_style(style);
+
+// Right: custom palette lives on the dark theme; then select that theme.
+ctx.set_visuals_of(egui::Theme::Dark, dark_blue_visuals());
+ctx.set_theme(egui::Theme::Dark);
+```
+
+Shared spacing/fonts go through `all_styles_mut`. Theme colors go on `Theme::Dark` / `Theme::Light`. Theme selection is `set_theme`.

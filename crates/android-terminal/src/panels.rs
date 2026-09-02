@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use adb_client::{DiskStats, NetworkStats};
+use adb_client::{DiskStats, NetworkStats, ProtocolStats};
 use eframe::egui;
 
 use crate::app::{App, CachedLogLine};
@@ -130,6 +130,29 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
     show_network_table(ui, stats);
 }
 
+pub fn protocols(ui: &mut egui::Ui, app: &App) {
+    if app.selected_serial.is_none() {
+        theme::panel_loading(ui);
+        return;
+    }
+
+    if let Some(error) = &app.protocol_error {
+        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+    }
+
+    let Some(stats) = &app.protocol_stats else {
+        theme::panel_loading(ui);
+        return;
+    };
+
+    show_protocol_stats(ui, stats);
+}
+
+fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {
+    ui.label(format!("TCP {}", format_bytes(stats.tcp_bytes)));
+    ui.label(format!("UDP {}", format_bytes(stats.udp_bytes)));
+}
+
 fn show_memory_stats(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
     ui.label("Memory");
     ui.label(format!(
@@ -181,8 +204,10 @@ fn show_disk_stats(ui: &mut egui::Ui, disks: &[DiskStats]) {
 }
 
 fn show_network_table(ui: &mut egui::Ui, stats: &[NetworkRow]) {
-    egui::ScrollArea::horizontal()
+    egui::ScrollArea::both()
         .id_salt(egui::Id::new("network_table_scroll"))
+        .auto_shrink([false, false])
+        .max_height(ui.available_height())
         .show(ui, |ui| {
             egui::Grid::new("network_stats")
                 .num_columns(5)

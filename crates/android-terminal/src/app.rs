@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use adb_client::{
     Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, NetworkPoller, NetworkUpdate,
-    StatsPoller, StatsUpdate, SystemStats,
+    ProtocolPoller, ProtocolStats, ProtocolUpdate, StatsPoller, StatsUpdate, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -26,10 +26,14 @@ pub struct App {
     pub stats_poller: Option<StatsPoller>,
     pub network_rx: Option<Receiver<NetworkUpdate>>,
     pub network_poller: Option<NetworkPoller>,
+    pub protocol_rx: Option<Receiver<ProtocolUpdate>>,
+    pub protocol_poller: Option<ProtocolPoller>,
     pub system_stats: Option<SystemStats>,
     pub stats_error: Option<String>,
     pub network_stats: Option<Vec<panels::NetworkRow>>,
     pub network_error: Option<String>,
+    pub protocol_stats: Option<ProtocolStats>,
+    pub protocol_error: Option<String>,
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
@@ -88,10 +92,14 @@ impl App {
             stats_poller: None,
             network_rx: None,
             network_poller: None,
+            protocol_rx: None,
+            protocol_poller: None,
             system_stats: None,
             stats_error: None,
             network_stats: None,
             network_error: None,
+            protocol_stats: None,
+            protocol_error: None,
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
@@ -191,6 +199,14 @@ impl App {
             }
             Err(err) => self.network_error = Some(err.user_message()),
         }
+
+        match ProtocolPoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.protocol_rx = Some(rx);
+                self.protocol_poller = Some(poller);
+            }
+            Err(err) => self.protocol_error = Some(err.user_message()),
+        }
     }
 
     fn clear_device_data(&mut self) {
@@ -204,12 +220,15 @@ impl App {
         self.stats_error = None;
         self.network_stats = None;
         self.network_error = None;
+        self.protocol_stats = None;
+        self.protocol_error = None;
     }
 
     fn stop_streams(&mut self) {
         self.stop_logcat();
         self.stop_stats();
         self.stop_network();
+        self.stop_protocols();
     }
 
     fn stop_network(&mut self) {
@@ -217,6 +236,13 @@ impl App {
             poller.stop();
         }
         self.network_rx = None;
+    }
+
+    fn stop_protocols(&mut self) {
+        if let Some(poller) = self.protocol_poller.take() {
+            poller.stop();
+        }
+        self.protocol_rx = None;
     }
 
     fn stop_stats(&mut self) {
@@ -310,6 +336,28 @@ impl App {
         updated
     }
 
+    fn drain_protocols(&mut self) -> bool {
+        let Some(rx) = self.protocol_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                ProtocolUpdate::Stats(stats) => {
+                    self.protocol_stats = Some(stats);
+                    self.protocol_error = None;
+                    updated = true;
+                }
+                ProtocolUpdate::Error(message) => {
+                    self.protocol_error = Some(message);
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
@@ -322,6 +370,9 @@ impl App {
             needs_repaint = true;
         }
         if self.drain_network() {
+            needs_repaint = true;
+        }
+        if self.drain_protocols() {
             needs_repaint = true;
         }
         if needs_repaint {

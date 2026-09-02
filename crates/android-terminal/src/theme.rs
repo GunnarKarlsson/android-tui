@@ -15,8 +15,12 @@ const JETBRAINS_MONO_BOLD: &[u8] =
 pub fn configure(ctx: &Context) {
     install_fonts(ctx);
 
-    let mut style = (*ctx.style()).clone();
+    ctx.all_styles_mut(apply_shared_style);
+    ctx.set_visuals_of(egui::Theme::Dark, dark_blue_visuals());
+    ctx.set_theme(egui::Theme::Dark);
+}
 
+fn apply_shared_style(style: &mut egui::Style) {
     // Single padding used by every panel (header, body, all four sides).
     style.spacing.window_margin = egui::Margin::same(8);
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
@@ -37,8 +41,46 @@ pub fn configure(ctx: &Context) {
     style
         .text_styles
         .insert(TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace));
+}
 
-    ctx.set_style(style);
+fn dark_blue_visuals() -> egui::Visuals {
+    let mut visuals = egui::Visuals::dark();
+
+    let bg = egui::Color32::from_rgb(10, 24, 52);
+    let bg_widget = egui::Color32::from_rgb(18, 40, 78);
+    let bg_hover = egui::Color32::from_rgb(28, 56, 104);
+    let bg_extreme = egui::Color32::from_rgb(6, 16, 36);
+    let bg_faint = egui::Color32::from_rgb(16, 36, 72);
+    let white = egui::Color32::WHITE;
+
+    visuals.panel_fill = bg;
+    visuals.window_fill = bg;
+    visuals.extreme_bg_color = bg_extreme;
+    visuals.faint_bg_color = bg_faint;
+    visuals.code_bg_color = bg_extreme;
+    visuals.selection.bg_fill = egui::Color32::from_rgb(40, 80, 160);
+
+    visuals.widgets.noninteractive.bg_fill = bg;
+    visuals.widgets.noninteractive.weak_bg_fill = bg;
+    visuals.widgets.noninteractive.fg_stroke.color = white;
+
+    visuals.widgets.inactive.bg_fill = bg_widget;
+    visuals.widgets.inactive.weak_bg_fill = bg_widget;
+    visuals.widgets.inactive.fg_stroke.color = white;
+
+    visuals.widgets.hovered.bg_fill = bg_hover;
+    visuals.widgets.hovered.weak_bg_fill = bg_hover;
+    visuals.widgets.hovered.fg_stroke.color = white;
+
+    visuals.widgets.active.bg_fill = bg_hover;
+    visuals.widgets.active.weak_bg_fill = bg_hover;
+    visuals.widgets.active.fg_stroke.color = white;
+
+    visuals.widgets.open.bg_fill = bg_widget;
+    visuals.widgets.open.weak_bg_fill = bg_widget;
+    visuals.widgets.open.fg_stroke.color = white;
+
+    visuals
 }
 
 fn install_fonts(ctx: &Context) {
