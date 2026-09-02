@@ -64,6 +64,14 @@ pub struct App {
     pub error_line_spacing: bool,
     pub logcat_filter: String,
     pub error_logcat_filter: String,
+    pub logcat_tag_input: String,
+    pub logcat_tag_filters: Vec<LogcatTagFilter>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LogcatTagFilter {
+    pub tag: String,
+    pub color_index: usize,
 }
 
 #[derive(Clone)]
@@ -71,6 +79,8 @@ pub struct CachedLogLine {
     full: String,
     compact: String,
     pub level: char,
+    #[allow(dead_code)]
+    pub tag: String,
 }
 
 impl CachedLogLine {
@@ -79,6 +89,7 @@ impl CachedLogLine {
             full: entry.format_line_with_timestamp(true),
             compact: entry.format_line_with_timestamp(false),
             level: entry.level,
+            tag: entry.tag.clone(),
         }
     }
 
@@ -92,6 +103,21 @@ impl CachedLogLine {
 
     pub fn matches_filter(&self, filter_lower: &str) -> bool {
         self.full.to_lowercase().contains(filter_lower)
+    }
+
+    pub fn matches_tag_filters(
+        &self,
+        tag_filters: &[LogcatTagFilter],
+        show_timestamps: bool,
+    ) -> bool {
+        if tag_filters.is_empty() {
+            return true;
+        }
+
+        let display = self.display(show_timestamps).to_lowercase();
+        tag_filters
+            .iter()
+            .all(|filter| display.contains(&filter.tag.to_lowercase()))
     }
 }
 
@@ -145,11 +171,41 @@ impl App {
             error_line_spacing: false,
             logcat_filter: String::new(),
             error_logcat_filter: String::new(),
+            logcat_tag_input: String::new(),
+            logcat_tag_filters: Vec::new(),
         };
         if let Some(serial) = first_ready_serial(&app.devices) {
             app.select_device(serial);
         }
         app
+    }
+
+    pub fn add_logcat_tag(&mut self) {
+        let tag = self.logcat_tag_input.trim().to_string();
+        if tag.is_empty() {
+            return;
+        }
+
+        if self
+            .logcat_tag_filters
+            .iter()
+            .any(|filter| filter.tag.eq_ignore_ascii_case(&tag))
+        {
+            self.logcat_tag_input.clear();
+            return;
+        }
+
+        self.logcat_tag_filters.push(LogcatTagFilter {
+            tag: tag.clone(),
+            color_index: theme::tag_color_index(&tag),
+        });
+        self.logcat_tag_input.clear();
+    }
+
+    pub fn remove_logcat_tag(&mut self, index: usize) {
+        if index < self.logcat_tag_filters.len() {
+            self.logcat_tag_filters.remove(index);
+        }
     }
 
     pub fn refresh_devices(&mut self) {
@@ -283,6 +339,8 @@ impl App {
         self.error_logcat_error = None;
         self.logcat_filter.clear();
         self.error_logcat_filter.clear();
+        self.logcat_tag_input.clear();
+        self.logcat_tag_filters.clear();
         self.system_stats = None;
         self.stats_error = None;
         self.network_stats = None;

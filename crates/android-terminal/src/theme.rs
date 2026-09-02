@@ -47,6 +47,18 @@ pub mod colors {
 
     pub const STORAGE_USED: Color32 = Color32::from_rgb(240, 120, 60);
     pub const STORAGE_TRACK: Color32 = Color32::from_rgb(55, 40, 35);
+
+    /// Background and foreground pairs for logcat tag highlight badges.
+    pub const TAG_HIGHLIGHTS: &[(Color32, Color32)] = &[
+        (Color32::from_rgb(58, 68, 82), Color32::from_rgb(210, 218, 228)),
+        (Color32::from_rgb(52, 72, 68), Color32::from_rgb(196, 220, 210)),
+        (Color32::from_rgb(72, 58, 68), Color32::from_rgb(220, 200, 214)),
+        (Color32::from_rgb(58, 62, 78), Color32::from_rgb(200, 206, 228)),
+        (Color32::from_rgb(68, 64, 52), Color32::from_rgb(220, 214, 196)),
+        (Color32::from_rgb(52, 66, 72), Color32::from_rgb(196, 214, 222)),
+        (Color32::from_rgb(70, 58, 58), Color32::from_rgb(228, 204, 204)),
+        (Color32::from_rgb(60, 70, 60), Color32::from_rgb(208, 220, 206)),
+    ];
 }
 
 /// Corner radius for panel cards.
@@ -275,6 +287,54 @@ pub fn filter_row(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
     ui.horizontal(add_contents);
     section_gap(ui);
 }
+
+/// Stable palette index for a tag name.
+pub fn tag_color_index(tag: &str) -> usize {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    tag.to_lowercase().hash(&mut hasher);
+    hasher.finish() as usize % colors::TAG_HIGHLIGHTS.len()
+}
+
+/// Removable tag-filter badge. Returns `true` when the remove control is clicked.
+pub fn tag_filter_badge(ui: &mut Ui, label: &str, bg: egui::Color32, fg: egui::Color32) -> bool {
+    let mut remove = false;
+    egui::Frame::default()
+        .fill(bg)
+        .corner_radius(egui::CornerRadius::same(4))
+        .inner_margin(egui::Margin::symmetric(6, 2))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(egui::RichText::new(label).color(fg).monospace());
+                if ui.small_button("×").on_hover_text("Remove tag filter").clicked() {
+                    remove = true;
+                }
+            });
+        });
+    remove
+}
+
+/// Row of active tag-filter badges. `on_remove` is called with the badge index.
+pub fn tag_filter_row(ui: &mut Ui, tags: &[crate::app::LogcatTagFilter], on_remove: &mut Option<usize>) {
+    if tags.is_empty() {
+        return;
+    }
+
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+        for (index, filter) in tags.iter().enumerate() {
+            let (bg, fg) = colors::TAG_HIGHLIGHTS[filter.color_index % colors::TAG_HIGHLIGHTS.len()];
+            let label = format!("tag:{}", filter.tag);
+            if tag_filter_badge(ui, &label, bg, fg) {
+                *on_remove = Some(index);
+            }
+        }
+    });
+    section_gap(ui);
+}
+
 pub fn panel_loading(ui: &mut Ui) {
     ui.label("Loading...");
 }

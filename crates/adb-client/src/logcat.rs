@@ -184,14 +184,16 @@ fn stream_logcat(
         }
     };
 
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
+    let mut reader = BufReader::new(stdout);
+    let mut line_buffer = Vec::new();
+    loop {
         if stop_rx.try_recv().is_ok() {
             break;
         }
 
-        let line = match line {
-            Ok(line) => line,
+        let line = match read_line_lossy(&mut reader, &mut line_buffer) {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
             Err(err) => {
                 let _ = entry_tx.send(LogEntry::raw(format!("logcat read error: {err}")));
                 break;
@@ -225,19 +227,39 @@ fn read_logcat_stderr(child: Arc<std::sync::Mutex<Child>>, entry_tx: Sender<LogE
         return;
     };
 
-    let reader = BufReader::new(stderr);
-    for line in reader.lines() {
-        match line {
-            Ok(line) if !line.trim().is_empty() => {
+    let mut reader = BufReader::new(stderr);
+    let mut line_buffer = Vec::new();
+    loop {
+        match read_line_lossy(&mut reader, &mut line_buffer) {
+            Ok(Some(line)) if !line.trim().is_empty() => {
                 let _ = entry_tx.send(LogEntry::adb_diagnostic(line));
             }
-            Ok(_) => {}
+            Ok(Some(_)) => {}
+            Ok(None) => break,
             Err(err) => {
-                let _ = entry_tx.send(LogEntry::adb_diagnostic(format!("logcat stderr read error: {err}")));
+                let _ = entry_tx.send(LogEntry::adb_diagnostic(format!(
+                    "logcat stderr read error: {err}"
+                )));
                 break;
             }
         }
     }
+}
+
+/// Read one line as UTF-8 lossy text. Unlike [`BufRead::lines`], invalid bytes do not
+/// terminate the stream.
+fn read_line_lossy(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> std::io::Result<Option<String>> {
+    buffer.clear();
+    let bytes_read = reader.read_until(b'\n', buffer)?;
+    if bytes_read == 0 {
+        return Ok(None);
+    }
+
+    while matches!(buffer.last(), Some(b'\n') | Some(b'\r')) {
+        buffer.pop();
+    }
+
+    Ok(Some(String::from_utf8_lossy(buffer).into_owned()))
 }
 
 fn report_logcat_exit(child: &Arc<std::sync::Mutex<Child>>, entry_tx: &Sender<LogEntry>) {
@@ -357,5 +379,17 @@ mod tests {
         assert!(error.is_error_level());
         assert!(fatal.is_error_level());
         assert!(!warning.is_error_level());
+    }
+
+    #[test]
+    fn read_line_lossy_replaces_invalid_utf8() {
+        let mut reader = BufReader::new(&b"hello \xFF world\n"[..]);
+        let mut buffer = Vec::new();
+
+        let line = read_line_lossy(&mut reader, &mut buffer).unwrap().unwrap();
+        assert!(line.contains("hello"));
+        assert!(line.contains("world"));
+        assert!(line.contains('\u{FFFD}'));
+        assert!(read_line_lossy(&mut reader, &mut buffer).unwrap().is_none());
     }
 }
