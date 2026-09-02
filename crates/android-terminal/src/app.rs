@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use adb_client::{
-    Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, StatsPoller, SystemStats,
+    Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, StatsPoller, StatsUpdate, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -18,7 +18,7 @@ pub struct App {
     pub selected_serial: Option<String>,
     pub logcat_rx: Option<Receiver<LogEntry>>,
     pub logcat_stream: Option<LogcatStream>,
-    pub stats_rx: Option<Receiver<SystemStats>>,
+    pub stats_rx: Option<Receiver<StatsUpdate>>,
     pub stats_poller: Option<StatsPoller>,
     pub system_stats: Option<SystemStats>,
     pub stats_error: Option<String>,
@@ -85,7 +85,7 @@ impl App {
                     }
                 }
             }
-            Err(err) => self.list_error = Some(err.to_string()),
+            Err(err) => self.list_error = Some(err.user_message()),
         }
     }
 
@@ -120,7 +120,7 @@ impl App {
                 self.logcat_rx = Some(rx);
                 self.logcat_stream = Some(stream);
             }
-            Err(err) => self.logcat_error = Some(err.to_string()),
+            Err(err) => self.logcat_error = Some(err.user_message()),
         }
 
         match StatsPoller::spawn(serial) {
@@ -128,7 +128,7 @@ impl App {
                 self.stats_rx = Some(rx);
                 self.stats_poller = Some(poller);
             }
-            Err(err) => self.stats_error = Some(err.to_string()),
+            Err(err) => self.stats_error = Some(err.user_message()),
         }
     }
 
@@ -195,9 +195,18 @@ impl App {
         };
 
         let mut updated = false;
-        while let Ok(stats) = rx.try_recv() {
-            self.system_stats = Some(stats);
-            updated = true;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                StatsUpdate::Stats(stats) => {
+                    self.system_stats = Some(stats);
+                    self.stats_error = None;
+                    updated = true;
+                }
+                StatsUpdate::Error(message) => {
+                    self.stats_error = Some(message);
+                    updated = true;
+                }
+            }
         }
         updated
     }

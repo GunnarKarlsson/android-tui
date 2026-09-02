@@ -41,15 +41,20 @@ impl LogEntry {
         matches!(self.level, 'E' | 'F')
     }
 
-    fn raw(message: String) -> Self {
+    /// Diagnostic message from adb/logcat (stderr, spawn failures, etc.).
+    pub fn adb_diagnostic(message: impl Into<String>) -> Self {
         LogEntry {
             timestamp: String::new(),
             pid: 0,
             tid: 0,
-            level: ' ',
-            tag: "logcat".to_string(),
-            message,
+            level: 'E',
+            tag: "adb".to_string(),
+            message: message.into(),
         }
+    }
+
+    fn raw(message: String) -> Self {
+        Self::adb_diagnostic(message)
     }
 }
 
@@ -128,6 +133,10 @@ fn stream_logcat(
     entry_tx: Sender<LogEntry>,
     stop_rx: Receiver<()>,
 ) {
+    let stderr_tx = entry_tx.clone();
+    let stderr_child = child.clone();
+    thread::spawn(move || read_logcat_stderr(stderr_child, stderr_tx));
+
     let stdout = {
         let mut guard = match child.lock() {
             Ok(guard) => guard,
@@ -163,6 +172,46 @@ fn stream_logcat(
             break;
         }
     }
+
+    report_logcat_exit(&child, &entry_tx);
+}
+
+fn read_logcat_stderr(child: Arc<std::sync::Mutex<Child>>, entry_tx: Sender<LogEntry>) {
+    let stderr = {
+        let mut guard = match child.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        guard.stderr.take()
+    };
+
+    let Some(stderr) = stderr else {
+        return;
+    };
+
+    let reader = BufReader::new(stderr);
+    for line in reader.lines() {
+        match line {
+            Ok(line) if !line.trim().is_empty() => {
+                let _ = entry_tx.send(LogEntry::adb_diagnostic(line));
+            }
+            Ok(_) => {}
+            Err(err) => {
+                let _ = entry_tx.send(LogEntry::adb_diagnostic(format!("logcat stderr read error: {err}")));
+                break;
+            }
+        }
+    }
+}
+
+fn report_logcat_exit(child: &Arc<std::sync::Mutex<Child>>, entry_tx: &Sender<LogEntry>) {
+    if let Ok(mut guard) = child.lock() {
+        if let Ok(status) = guard.wait() {
+            if !status.success() {
+                let _ = entry_tx.send(LogEntry::adb_diagnostic(format!("logcat exited: {status}")));
+            }
+        }
+    }
 }
 
 fn kill_child(child: &Arc<std::sync::Mutex<Child>>) {
@@ -196,6 +245,13 @@ fn parse_logcat_line(line: &str) -> Option<LogEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adb_diagnostic_is_error_level() {
+        let entry = LogEntry::adb_diagnostic("device offline");
+        assert!(entry.is_error_level());
+        assert_eq!(entry.tag, "adb");
+    }
 
     #[test]
     fn parse_standard_logcat_line() {

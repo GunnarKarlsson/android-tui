@@ -7,6 +7,15 @@ use crate::adb::run_adb_for_serial;
 use crate::error::AdbError;
 
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const MAX_BACKOFF_INTERVAL: Duration = Duration::from_secs(5);
+const BACKOFF_STEP: Duration = Duration::from_secs(1);
+
+/// Update from the stats poller — either a successful snapshot or a transient error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatsUpdate {
+    Stats(SystemStats),
+    Error(String),
+}
 
 /// Memory statistics from `/proc/meminfo` (values in kB).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,30 +68,43 @@ pub struct StatsPoller {
 
 impl StatsPoller {
     /// Polls device stats every two seconds.
-    pub fn spawn(serial: &str) -> Result<(Receiver<SystemStats>, Self), AdbError> {
+    pub fn spawn(serial: &str) -> Result<(Receiver<StatsUpdate>, Self), AdbError> {
         Self::spawn_with_interval(serial, DEFAULT_POLL_INTERVAL)
     }
 
     pub fn spawn_with_interval(
         serial: &str,
         interval: Duration,
-    ) -> Result<(Receiver<SystemStats>, Self), AdbError> {
+    ) -> Result<(Receiver<StatsUpdate>, Self), AdbError> {
         let (stats_tx, stats_rx) = crossbeam_channel::unbounded();
         let (stop_tx, stop_rx) = crossbeam_channel::unbounded();
         let serial = serial.to_string();
 
         let join_handle = thread::spawn(move || {
+            let mut poll_interval = interval;
             while stop_rx.try_recv().is_err() {
                 match fetch_system_stats(&serial) {
                     Ok(stats) => {
-                        if stats_tx.send(stats).is_err() {
+                        poll_interval = interval;
+                        if stats_tx
+                            .send(StatsUpdate::Stats(stats))
+                            .is_err()
+                        {
                             break;
                         }
                     }
-                    Err(_) => {}
+                    Err(err) => {
+                        poll_interval = next_backoff_interval(poll_interval);
+                        if stats_tx
+                            .send(StatsUpdate::Error(err.user_message()))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                 }
 
-                sleep_until_stop(&stop_rx, interval);
+                sleep_until_stop(&stop_rx, poll_interval);
             }
         });
 
@@ -212,9 +234,29 @@ fn sleep_until_stop(stop_rx: &Receiver<()>, duration: Duration) {
     }
 }
 
+fn next_backoff_interval(current: Duration) -> Duration {
+    (current + BACKOFF_STEP).min(MAX_BACKOFF_INTERVAL)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backoff_caps_at_five_seconds() {
+        assert_eq!(
+            next_backoff_interval(Duration::from_secs(2)),
+            Duration::from_secs(3)
+        );
+        assert_eq!(
+            next_backoff_interval(Duration::from_secs(4)),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            next_backoff_interval(Duration::from_secs(5)),
+            Duration::from_secs(5)
+        );
+    }
 
     #[test]
     fn parse_meminfo_sample() {

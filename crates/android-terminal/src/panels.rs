@@ -57,6 +57,10 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         .on_hover_text("Filter error lines by text");
     });
 
+    if let Some(error) = &app.logcat_error {
+        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+    }
+
     if app.selected_serial.is_none() {
         ui.label("Select a device to start logcat.");
         return;
