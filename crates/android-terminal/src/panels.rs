@@ -329,25 +329,38 @@ fn paint_usage_donut(
     let size = rect.width().min(rect.height());
     let radius = size * 0.38;
     let stroke_width = size * 0.12;
-
-    painter.circle_stroke(
-        center,
-        radius,
-        egui::Stroke::new(stroke_width, track_color),
-    );
-
+    let start = -TAU / 4.0;
     let used = fraction.clamp(0.0, 1.0);
+
+    paint_ring_arc(painter, center, radius, start, TAU, stroke_width, track_color);
     if used > 0.0 {
-        let start = -TAU / 4.0;
-        let sweep = used * TAU;
-        let points = arc_points(center, radius, start, sweep, 64);
-        painter.add(egui::Shape::Path(egui::epaint::PathShape {
-            points,
-            closed: false,
-            fill: egui::Color32::TRANSPARENT,
-            stroke: egui::Stroke::new(stroke_width, used_color).into(),
-        }));
+        paint_ring_arc(
+            painter,
+            center,
+            radius,
+            start,
+            used * TAU,
+            stroke_width,
+            used_color,
+        );
     }
+}
+
+fn paint_ring_arc(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    radius: f32,
+    start: f32,
+    sweep: f32,
+    stroke_width: f32,
+    color: egui::Color32,
+) {
+    painter.add(egui::Shape::Path(egui::epaint::PathShape {
+        points: arc_points(center, radius, start, sweep, 64),
+        closed: false,
+        fill: egui::Color32::TRANSPARENT,
+        stroke: egui::epaint::PathStroke::new(stroke_width, color),
+    }));
 }
 
 fn arc_points(center: egui::Pos2, radius: f32, start: f32, sweep: f32, steps: usize) -> Vec<egui::Pos2> {
