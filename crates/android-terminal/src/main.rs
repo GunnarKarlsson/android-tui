@@ -37,25 +37,30 @@ impl eframe::App for TerminalApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.inner.update_panels(ctx);
 
-        eframe::egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.heading("Android Terminal");
-        });
+        eframe::egui::TopBottomPanel::top("header")
+            .frame(theme::shell_frame(ctx))
+            .show(ctx, |ui| {
+                theme::title_bar(ui, "Android Terminal");
+            });
 
         eframe::egui::SidePanel::left("devices")
             .resizable(true)
             .default_width(260.0)
+            .frame(theme::shell_frame(ctx))
             .show(ctx, |ui| {
                 self.inner.show_devices(ui);
             });
 
-        eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            if self.inner.adb_error.is_some() {
-                ui.label("ADB is not available. See the devices panel for details.");
-                return;
-            }
+        eframe::egui::CentralPanel::default()
+            .frame(theme::shell_frame(ctx))
+            .show(ctx, |ui| {
+                if self.inner.adb_error.is_some() {
+                    ui.label("ADB is not available. See the devices panel for details.");
+                    return;
+                }
 
-            tiles::show(ui, &mut self.tile_tree, &mut self.inner);
-        });
+                tiles::show(ui, &mut self.tile_tree, &mut self.inner);
+            });
     }
 }
 

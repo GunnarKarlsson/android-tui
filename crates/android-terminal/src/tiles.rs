@@ -59,10 +59,7 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         _tile_id: TileId,
         pane: &mut PanelId,
     ) -> UiResponse {
-        theme::panel_header(ui, pane.title());
-        ui.separator();
-
-        theme::panel_content(ui, |ui| match pane {
+        theme::panel(ui, pane.title(), |ui| match pane {
             PanelId::LogcatAll => panels::logcat_all(ui, self.app),
             PanelId::LogcatErrors => panels::logcat_errors(ui, self.app),
             PanelId::SystemStats => panels::memory_disk(ui, self.app),

@@ -299,18 +299,28 @@ impl App {
     }
 
     pub fn show_devices(&mut self, ui: &mut egui::Ui) {
+        let mut refresh = false;
+        theme::panel_with_header_actions(
+            ui,
+            "Devices",
+            |ui| {
+                refresh = theme::icon_button(ui, theme::icons::REFRESH).clicked();
+            },
+            |ui| {
+                self.show_devices_body(ui);
+            },
+        );
+        if refresh {
+            self.refresh_devices();
+        }
+    }
+
+    fn show_devices_body(&mut self, ui: &mut egui::Ui) {
         if let Some(error) = &self.adb_error {
             ui.colored_label(egui::Color32::from_rgb(220, 80, 80), "ADB not available");
             ui.label(error);
             return;
         }
-
-        ui.horizontal(|ui| {
-            ui.label("Devices");
-            if theme::icon_button(ui, theme::icons::REFRESH).clicked() {
-                self.refresh_devices();
-            }
-        });
 
         if let Some(error) = &self.list_error {
             ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);

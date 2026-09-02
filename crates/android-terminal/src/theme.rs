@@ -17,7 +17,7 @@ pub fn configure(ctx: &Context) {
 
     let mut style = (*ctx.style()).clone();
 
-    // Inset for tile panel bodies (see [`panel_content`]).
+    // Single padding used by every panel (header, body, all four sides).
     style.spacing.window_margin = egui::Margin::same(8);
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
 
@@ -71,10 +71,13 @@ fn install_fonts(ctx: &Context) {
     ctx.set_fonts(fonts);
 }
 
-/// Margin applied inside each tile panel, below the title separator.
-fn panel_inner_margin(ui: &Ui) -> egui::Margin {
-    // egui has no dedicated "tile pane" spacing; we reuse window_margin as the
-    // single source of truth configured in [`configure`].
+/// Outer frame for SidePanel / CentralPanel / TopBottomPanel.
+/// Zero inner margin so [`panel`] is the only source of padding.
+pub fn shell_frame(ctx: &Context) -> egui::Frame {
+    egui::Frame::NONE.fill(ctx.style().visuals.panel_fill)
+}
+
+fn panel_padding(ui: &Ui) -> egui::Margin {
     ui.style().spacing.window_margin
 }
 
@@ -88,24 +91,46 @@ pub mod icons {
 pub fn icon_button(ui: &mut Ui, icon: &str) -> egui::Response {
     ui.button(icon)
 }
+
 /// Shown in every panel until it has data to display.
 pub fn panel_loading(ui: &mut Ui) {
     ui.label("Loading...");
 }
 
-/// Panel title with the same inner margin as [`panel_content`].
-pub fn panel_header(ui: &mut Ui, title: impl Into<egui::RichText>) {
+/// App title strip: same padding as [`panel`], no body.
+pub fn title_bar(ui: &mut Ui, title: impl Into<egui::RichText>) {
     egui::Frame::NONE
-        .inner_margin(panel_inner_margin(ui))
+        .inner_margin(panel_padding(ui))
         .show(ui, |ui| {
             ui.heading(title);
         });
 }
 
-/// Wrap panel body content with the themed inner margin.
-pub fn panel_content<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+/// One chrome for every panel: uniform padding on all four sides, title, then body.
+pub fn panel<R>(
+    ui: &mut Ui,
+    title: impl Into<egui::RichText>,
+    add_body: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    panel_with_header_actions(ui, title, |_| {}, add_body)
+}
+
+/// Like [`panel`], with extra widgets on the header row (e.g. the devices refresh icon).
+pub fn panel_with_header_actions<R>(
+    ui: &mut Ui,
+    title: impl Into<egui::RichText>,
+    add_header_actions: impl FnOnce(&mut Ui),
+    add_body: impl FnOnce(&mut Ui) -> R,
+) -> R {
     egui::Frame::NONE
-        .inner_margin(panel_inner_margin(ui))
-        .show(ui, add_contents)
+        .inner_margin(panel_padding(ui))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading(title);
+                add_header_actions(ui);
+            });
+            ui.separator();
+            add_body(ui)
+        })
         .inner
 }
