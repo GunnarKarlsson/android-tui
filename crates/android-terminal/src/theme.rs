@@ -31,8 +31,8 @@ pub mod colors {
     pub const PANEL_SPLITTER_HOVER: Color32 = Color32::from_rgb(96, 102, 112);
     /// Header rule inside a panel card.
     pub const PANEL_SEPARATOR: Color32 = Color32::from_rgb(56, 62, 72);
-    /// Selected icon toggle / selection fill.
-    pub const SELECTION: Color32 = Color32::from_rgb(40, 80, 160);
+    /// Selected icon toggle / device list fill.
+    pub const SELECTION: Color32 = Color32::from_rgb(72, 78, 88);
 
     pub const ERROR: Color32 = Color32::from_rgb(220, 80, 80);
     pub const LOG_ERROR: Color32 = ERROR;

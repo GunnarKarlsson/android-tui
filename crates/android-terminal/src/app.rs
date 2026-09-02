@@ -4,8 +4,8 @@ use std::time::Duration;
 use adb_client::{
     Adb, AppStoragePoller, AppStorageUpdate, DeviceInfo, DeviceState, LogEntry, LogcatStream,
     MemoryStats, NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate,
-    RamPoller, RamUpdate, StatsPoller, StatsUpdate, StorageBreakdown, StorageBreakdownPoller,
-    StorageBreakdownUpdate, StorageGaugePoller, StorageGaugeUpdate, StorageOverview, SystemStats,
+    RamPoller, RamUpdate, StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate,
+    StorageGaugePoller, StorageGaugeUpdate, StorageOverview,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -25,14 +25,10 @@ pub struct App {
     pub logcat_stream: Option<LogcatStream>,
     pub error_logcat_rx: Option<Receiver<LogEntry>>,
     pub error_logcat_stream: Option<LogcatStream>,
-    pub stats_rx: Option<Receiver<StatsUpdate>>,
-    pub stats_poller: Option<StatsPoller>,
     pub network_rx: Option<Receiver<NetworkUpdate>>,
     pub network_poller: Option<NetworkPoller>,
     pub protocol_rx: Option<Receiver<ProtocolUpdate>>,
     pub protocol_poller: Option<ProtocolPoller>,
-    pub system_stats: Option<SystemStats>,
-    pub stats_error: Option<String>,
     pub network_stats: Option<Vec<panels::NetworkRow>>,
     pub network_error: Option<String>,
     pub protocol_stats: Option<ProtocolStats>,
@@ -132,14 +128,10 @@ impl App {
             logcat_stream: None,
             error_logcat_rx: None,
             error_logcat_stream: None,
-            stats_rx: None,
-            stats_poller: None,
             network_rx: None,
             network_poller: None,
             protocol_rx: None,
             protocol_poller: None,
-            system_stats: None,
-            stats_error: None,
             network_stats: None,
             network_error: None,
             protocol_stats: None,
@@ -273,14 +265,6 @@ impl App {
             Err(err) => self.error_logcat_error = Some(err.user_message()),
         }
 
-        match StatsPoller::spawn(serial) {
-            Ok((rx, poller)) => {
-                self.stats_rx = Some(rx);
-                self.stats_poller = Some(poller);
-            }
-            Err(err) => self.stats_error = Some(err.user_message()),
-        }
-
         match RamPoller::spawn(serial) {
             Ok((rx, poller)) => {
                 self.ram_rx = Some(rx);
@@ -341,8 +325,6 @@ impl App {
         self.error_logcat_filter.clear();
         self.logcat_tag_input.clear();
         self.logcat_tag_filters.clear();
-        self.system_stats = None;
-        self.stats_error = None;
         self.network_stats = None;
         self.network_error = None;
         self.protocol_stats = None;
@@ -358,7 +340,6 @@ impl App {
 
     fn stop_streams(&mut self) {
         self.stop_logcat();
-        self.stop_stats();
         self.stop_ram();
         self.stop_storage_gauge();
         self.stop_network();
@@ -393,13 +374,6 @@ impl App {
             poller.stop();
         }
         self.storage_breakdown_rx = None;
-    }
-
-    fn stop_stats(&mut self) {
-        if let Some(poller) = self.stats_poller.take() {
-            poller.stop();
-        }
-        self.stats_rx = None;
     }
 
     fn stop_ram(&mut self) {
@@ -451,28 +425,6 @@ impl App {
                     .push_back(CachedLogLine::from_entry(&entry));
                 trim_buffer(&mut self.error_lines);
                 updated = true;
-            }
-        }
-        updated
-    }
-
-    fn drain_stats(&mut self) -> bool {
-        let Some(rx) = self.stats_rx.as_ref() else {
-            return false;
-        };
-
-        let mut updated = false;
-        while let Ok(update) = rx.try_recv() {
-            match update {
-                StatsUpdate::Stats(stats) => {
-                    self.system_stats = Some(stats);
-                    self.stats_error = None;
-                    updated = true;
-                }
-                StatsUpdate::Error(message) => {
-                    self.stats_error = Some(message);
-                    updated = true;
-                }
             }
         }
         updated
@@ -631,9 +583,6 @@ impl App {
         if self.drain_error_logcat() {
             needs_repaint = true;
         }
-        if self.drain_stats() {
-            needs_repaint = true;
-        }
         if self.drain_ram() {
             needs_repaint = true;
         }
@@ -698,33 +647,31 @@ impl App {
             .auto_shrink([false, false])
             .max_height(ui.available_height())
             .show(ui, |ui| {
-                let device_count = self.devices.len();
-                for index in 0..device_count {
-                    let device = &self.devices[index];
-                    let selected =
-                        self.selected_serial.as_deref() == Some(device.serial.as_str());
-                    let label = format!("{}\n{}", device.model, device.serial);
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                    let device_count = self.devices.len();
+                    for index in 0..device_count {
+                        let device = &self.devices[index];
+                        let selected =
+                            self.selected_serial.as_deref() == Some(device.serial.as_str());
+                        let label = format!("{}\n{}", device.model, device.serial);
 
-                    if device.state == DeviceState::Device {
-                        if ui.selectable_label(selected, label).clicked() {
-                            if selected {
-                                self.deselect_device();
-                            } else {
+                        if device.state == DeviceState::Device {
+                            if ui.selectable_label(selected, label).clicked() && !selected {
                                 let serial = self.devices[index].serial.clone();
                                 self.select_device(serial);
                             }
+                        } else {
+                            ui.add_enabled_ui(false, |ui| {
+                                ui.label(format!(
+                                    "{}\n{} ({})",
+                                    device.model,
+                                    device.serial,
+                                    device_state_label(&device.state)
+                                ));
+                            });
                         }
-                    } else {
-                        ui.add_enabled_ui(false, |ui| {
-                            ui.label(format!(
-                                "{}\n{} ({})",
-                                device.model,
-                                device.serial,
-                                device_state_label(&device.state)
-                            ));
-                        });
                     }
-                }
+                });
             });
     }
 }

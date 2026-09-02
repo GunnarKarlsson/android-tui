@@ -169,10 +169,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
     );
 }
 
-pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
-    if let Some(error) = &app.stats_error {
-        theme::error_label(ui, error);
-    }
+pub fn storage_usage(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.storage_breakdown_error {
         theme::error_label(ui, error);
     }
@@ -187,19 +184,11 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
         }
 
         egui::ScrollArea::both()
-            .id_salt(egui::Id::new("memory_disk_scroll"))
+            .id_salt(egui::Id::new("storage_usage_scroll"))
             .auto_shrink([false, false])
             .max_height(ui.available_height())
             .show(ui, |ui| {
-                if let Some(stats) = &app.system_stats {
-                    show_memory_stats(ui, &stats.memory);
-                } else if app.stats_rx.is_some() {
-                    ui.label("Loading memory…");
-                }
-                ui.separator();
                 if let Some(breakdown) = &app.storage_breakdown {
-                    show_storage_overview(ui, &breakdown.overview);
-                    ui.separator();
                     show_storage_categories(ui, &breakdown.categories);
                 } else if app.storage_breakdown_rx.is_some() {
                     ui.label("Loading storage…");
@@ -261,6 +250,7 @@ pub fn storage_gauge(ui: &mut egui::Ui, app: &App) {
 fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
     show_usage_donut(
         ui,
+        egui::Id::new("ram_gauge"),
         memory.used_fraction(),
         format_gb_from_kb(memory.used_kb()),
         format_gb_from_kb(memory.total_kb),
@@ -272,6 +262,7 @@ fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
 fn show_storage_donut(ui: &mut egui::Ui, overview: &StorageOverview) {
     show_usage_donut(
         ui,
+        egui::Id::new("storage_gauge"),
         overview.used_fraction(),
         format_gb_from_bytes(overview.used_bytes),
         format_gb_from_bytes(overview.total_bytes),
@@ -282,6 +273,7 @@ fn show_storage_donut(ui: &mut egui::Ui, overview: &StorageOverview) {
 
 fn show_usage_donut(
     ui: &mut egui::Ui,
+    scroll_id: egui::Id,
     fraction: f32,
     used_label: String,
     total_label: String,
@@ -289,46 +281,64 @@ fn show_usage_donut(
     used_color: egui::Color32,
 ) {
     let percent = (fraction * 100.0).round() as u32;
-    let chart_height = ui.available_height().max(120.0);
 
-    let (rect, _response) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), chart_height),
-        egui::Sense::hover(),
-    );
+    egui::ScrollArea::vertical()
+        .id_salt(scroll_id)
+        .auto_shrink([false, false])
+        .max_height(ui.available_height())
+        .show(ui, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.set_width(ui.available_width());
 
-    let painter = ui.painter_at(rect);
-    paint_usage_donut(&painter, rect, fraction, track_color, used_color);
+                let diameter = ui.available_width().clamp(80.0, 160.0);
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(diameter, diameter),
+                    egui::Sense::hover(),
+                );
 
-    let center = rect.center();
-    painter.text(
-        center + egui::vec2(0.0, -8.0),
-        egui::Align2::CENTER_CENTER,
-        format!("{percent}%"),
-        egui::FontId::proportional(28.0),
-        theme::colors::OFF_WHITE,
-    );
-    painter.text(
-        center + egui::vec2(0.0, 18.0),
-        egui::Align2::CENTER_CENTER,
-        format!("{used_label} / {total_label}"),
-        egui::FontId::proportional(12.0),
-        theme::colors::LOG_DEBUG,
-    );
+                let painter = ui.painter_at(rect);
+                let center = rect.center();
+                let radius = diameter * 0.38;
+                let stroke_width = diameter * 0.12;
+
+                paint_usage_donut(
+                    &painter,
+                    center,
+                    radius,
+                    stroke_width,
+                    fraction,
+                    track_color,
+                    used_color,
+                );
+                painter.text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    format!("{percent}%"),
+                    egui::FontId::proportional(28.0),
+                    theme::colors::OFF_WHITE,
+                );
+
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(format!("{used_label} / {total_label}"))
+                        .color(theme::colors::LOG_DEBUG)
+                        .size(12.0),
+                );
+            });
+        });
 }
 
 fn paint_usage_donut(
     painter: &egui::Painter,
-    rect: egui::Rect,
+    center: egui::Pos2,
+    radius: f32,
+    stroke_width: f32,
     fraction: f32,
     track_color: egui::Color32,
     used_color: egui::Color32,
 ) {
     use std::f32::consts::TAU;
 
-    let center = rect.center();
-    let size = rect.width().min(rect.height());
-    let radius = size * 0.38;
-    let stroke_width = size * 0.12;
     let start = -TAU / 4.0;
     let used = fraction.clamp(0.0, 1.0);
 
@@ -468,38 +478,6 @@ fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {
                     }
                 });
         });
-}
-
-fn show_memory_stats(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
-    ui.label("Memory");
-    let used_percent = (memory.used_fraction() * 100.0).round() as u32;
-    ui.label(format!(
-        "{} used / {} total — {}%",
-        format_kb(memory.used_kb()),
-        format_kb(memory.total_kb),
-        used_percent,
-    ));
-    ui.label(format!(
-        "{} free, {} available",
-        format_kb(memory.free_kb),
-        format_kb(memory.available_kb),
-    ));
-    ui.label(format!(
-        "Buffers: {}  Cached: {}",
-        format_kb(memory.buffers_kb),
-        format_kb(memory.cached_kb),
-    ));
-}
-
-fn show_storage_overview(ui: &mut egui::Ui, overview: &StorageOverview) {
-    ui.label("Storage");
-    ui.label(format!(
-        "{} used / {} total ({} free) — {}%",
-        format_bytes(overview.used_bytes),
-        format_bytes(overview.total_bytes),
-        format_bytes(overview.available_bytes),
-        overview.use_percent,
-    ));
 }
 
 fn show_storage_categories(ui: &mut egui::Ui, categories: &[StorageCategory]) {
@@ -698,16 +676,6 @@ fn filtered_line_indices_simple(lines: &VecDeque<CachedLogLine>, filter: &str) -
         .filter(|(_, line)| line.matches_filter(&filter_lower))
         .map(|(index, _)| index)
         .collect()
-}
-
-fn format_kb(kb: u64) -> String {
-    if kb >= 1_048_576 {
-        format!("{:.1} GB", kb as f64 / 1_048_576.0)
-    } else if kb >= 1024 {
-        format!("{:.1} MB", kb as f64 / 1024.0)
-    } else {
-        format!("{kb} kB")
-    }
 }
 
 fn show_log_scroll(

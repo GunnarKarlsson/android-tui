@@ -25,7 +25,7 @@ impl PanelId {
             PanelId::Storage => "Storage",
             PanelId::LogcatAll => "Logcat (All)",
             PanelId::LogcatErrors => "Logcat (Errors)",
-            PanelId::SystemStats => "Memory / Disk",
+            PanelId::SystemStats => "Storage Details",
             PanelId::Network => "Network Activity",
             PanelId::Protocols => "App Traffic",
         }
@@ -59,7 +59,7 @@ pub fn create_default_tree() -> Tree<PanelId> {
     set_linear_shares(
         &mut tiles,
         left_column,
-        &[(devices, 2.0), (ram, 1.0), (storage, 1.0)],
+        &[(devices, 2.0), (ram, 1.5), (storage, 1.5)],
     );
     set_linear_shares(
         &mut tiles,
@@ -164,7 +164,7 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
             }
             PanelId::SystemStats => {
                 theme::panel(ui, pane.title(), |ui| {
-                    panels::memory_disk(ui, self.app)
+                    panels::storage_usage(ui, self.app)
                 });
             }
             PanelId::Network => {

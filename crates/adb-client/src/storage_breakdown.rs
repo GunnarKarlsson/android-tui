@@ -37,10 +37,9 @@ impl StorageOverview {
     }
 }
 
-/// User storage total plus folder-based category sizes.
+/// Folder-based category sizes for user storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageBreakdown {
-    pub overview: StorageOverview,
     pub categories: Vec<StorageCategory>,
     pub timestamp: SystemTime,
 }
@@ -107,7 +106,7 @@ const CATEGORY_ORDER: &[&str] = &[
     "Other",
 ];
 
-/// Background poller for user storage overview and category breakdown.
+/// Background poller for folder-based storage category sizes.
 pub struct StorageBreakdownPoller {
     stop_tx: Sender<()>,
     join_handle: Option<JoinHandle<()>>,
@@ -181,8 +180,6 @@ pub fn fetch_storage_overview(serial: &str) -> Result<StorageOverview, AdbError>
 }
 
 fn fetch_storage_breakdown(serial: &str) -> Result<StorageBreakdown, AdbError> {
-    let overview = fetch_storage_overview(serial)?;
-
     let folder_paths: Vec<String> = FOLDER_SPECS
         .iter()
         .map(|spec| folder_path(spec.folder))
@@ -195,7 +192,6 @@ fn fetch_storage_breakdown(serial: &str) -> Result<StorageBreakdown, AdbError> {
     let categories = aggregate_categories(&folder_sizes);
 
     Ok(StorageBreakdown {
-        overview,
         categories,
         timestamp: SystemTime::now(),
     })
