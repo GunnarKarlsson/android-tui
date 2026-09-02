@@ -57,7 +57,7 @@ impl CachedLogLine {
 
 impl App {
     pub fn new(adb_error: Option<String>, devices: Vec<DeviceInfo>, list_error: Option<String>) -> Self {
-        App {
+        let mut app = App {
             adb_error,
             devices,
             list_error,
@@ -82,7 +82,11 @@ impl App {
             error_auto_update_feed: true,
             logcat_filter: String::new(),
             error_logcat_filter: String::new(),
+        };
+        if let Some(serial) = first_ready_serial(&app.devices) {
+            app.select_device(serial);
         }
+        app
     }
 
     pub fn refresh_devices(&mut self) {
@@ -96,6 +100,11 @@ impl App {
                     });
                     if !still_connected {
                         self.deselect_device();
+                    }
+                }
+                if self.selected_serial.is_none() {
+                    if let Some(serial) = first_ready_serial(&self.devices) {
+                        self.select_device(serial);
                     }
                 }
             }
@@ -382,6 +391,13 @@ fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
     while buffer.len() > MAX_LOG_LINES {
         buffer.pop_front();
     }
+}
+
+fn first_ready_serial(devices: &[DeviceInfo]) -> Option<String> {
+    devices
+        .iter()
+        .find(|device| device.state == DeviceState::Device)
+        .map(|device| device.serial.clone())
 }
 
 fn device_state_label(state: &DeviceState) -> &str {
