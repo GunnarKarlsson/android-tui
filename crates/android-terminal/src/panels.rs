@@ -160,9 +160,10 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
 
-    egui::ScrollArea::vertical()
+    egui::ScrollArea::both()
         .id_salt(egui::Id::new("memory_disk_scroll"))
         .auto_shrink([false, false])
+        .max_height(ui.available_height())
         .show(ui, |ui| {
             if let Some(stats) = &app.system_stats {
                 show_memory_stats(ui, &stats.memory);
@@ -270,10 +271,12 @@ fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {
 
 fn show_memory_stats(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
     ui.label("Memory");
+    let used_percent = (memory.used_fraction() * 100.0).round() as u32;
     ui.label(format!(
-        "{} used / {} total",
+        "{} used / {} total — {}%",
         format_kb(memory.used_kb()),
         format_kb(memory.total_kb),
+        used_percent,
     ));
     ui.label(format!(
         "{} free, {} available",
@@ -285,33 +288,16 @@ fn show_memory_stats(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
         format_kb(memory.buffers_kb),
         format_kb(memory.cached_kb),
     ));
-
-    let used_fraction = memory.used_fraction();
-    ui.add(styled_progress_bar(
-        used_fraction,
-        format!("{:.0}% used", used_fraction * 100.0),
-        egui::Color32::from_rgb(160, 200, 240),
-    ));
 }
 
 fn show_storage_overview(ui: &mut egui::Ui, overview: &StorageOverview) {
     ui.label("Storage");
     ui.label(format!(
-        "{} used / {} total ({} free)",
+        "{} used / {} total ({} free) — {}%",
         format_bytes(overview.used_bytes),
         format_bytes(overview.total_bytes),
         format_bytes(overview.available_bytes),
-    ));
-
-    let fraction = if overview.total_bytes == 0 {
-        0.0
-    } else {
-        overview.used_bytes as f32 / overview.total_bytes as f32
-    };
-    ui.add(styled_progress_bar(
-        fraction,
-        format!("{}% used", overview.use_percent),
-        disk_bar_color(fraction),
+        overview.use_percent,
     ));
 }
 
@@ -352,29 +338,23 @@ fn show_app_storage(ui: &mut egui::Ui, storage: &AppStorageState) {
         return;
     }
 
-    egui::ScrollArea::vertical()
-        .id_salt(egui::Id::new("app_storage_scroll"))
-        .max_height(240.0)
-        .auto_shrink([false, false])
+    egui::Grid::new("app_storage")
+        .num_columns(2)
+        .spacing([12.0, 4.0])
+        .striped(true)
         .show(ui, |ui| {
-            egui::Grid::new("app_storage")
-                .num_columns(2)
-                .spacing([12.0, 4.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label("Package");
-                    ui.label("Storage");
-                    ui.end_row();
+            ui.label("Package");
+            ui.label("Storage");
+            ui.end_row();
 
-                    for (package, bytes) in storage.sorted_rows() {
-                        ui.label(package);
-                        ui.label(match bytes {
-                            Some(value) => format_bytes(value),
-                            None => "…".to_string(),
-                        });
-                        ui.end_row();
-                    }
+            for (package, bytes) in storage.sorted_rows() {
+                ui.label(truncate_package_name(package)).on_hover_text(package);
+                ui.label(match bytes {
+                    Some(value) => format_bytes(value),
+                    None => "…".to_string(),
                 });
+                ui.end_row();
+            }
         });
 }
 
@@ -433,6 +413,14 @@ pub fn network_rows_from_stats(stats: &NetworkStats) -> Vec<NetworkRow> {
         .collect()
 }
 
+fn truncate_package_name(name: &str) -> String {
+    const MAX_LEN: usize = 42;
+    if name.len() <= MAX_LEN {
+        return name.to_string();
+    }
+    format!("{}...", &name[..MAX_LEN - 3])
+}
+
 fn format_bytes(bytes: u64) -> String {
     if bytes >= 1_073_741_824 {
         format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
@@ -480,27 +468,6 @@ fn filtered_line_indices(lines: &VecDeque<CachedLogLine>, filter: &str) -> Vec<u
         .filter(|(_, line)| line.matches_filter(&filter_lower))
         .map(|(index, _)| index)
         .collect()
-}
-
-fn disk_bar_color(fraction: f32) -> egui::Color32 {
-    if fraction >= 0.9 {
-        egui::Color32::from_rgb(240, 170, 170)
-    } else if fraction >= 0.75 {
-        egui::Color32::from_rgb(240, 220, 150)
-    } else {
-        egui::Color32::from_rgb(160, 200, 240)
-    }
-}
-
-fn styled_progress_bar(
-    fraction: f32,
-    text: impl Into<egui::WidgetText>,
-    fill: egui::Color32,
-) -> egui::ProgressBar {
-    egui::ProgressBar::new(fraction)
-        .text(text)
-        .fill(fill)
-        .corner_radius(egui::CornerRadius::ZERO)
 }
 
 fn format_kb(kb: u64) -> String {

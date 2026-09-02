@@ -8,11 +8,15 @@ use regex::Regex;
 use crate::adb::run_adb_for_serial;
 use crate::error::AdbError;
 
-const INITIAL_DELAY: Duration = Duration::from_secs(3);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const BATCH_SIZE: usize = 20;
 
 static STORAGE_BYTES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^(.+?): (\d+) bytes").expect("valid storage bytes regex")
+});
+
+static PKG_MARKER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^@PKG@(.+)$").expect("valid package marker regex")
 });
 
 /// Per-app storage sizes from `cmd package get-package-storage-stats`.
@@ -44,7 +48,6 @@ impl AppStoragePoller {
         let serial = serial.to_string();
 
         let join_handle = thread::spawn(move || {
-            sleep_until_stop(&stop_rx, INITIAL_DELAY);
             while stop_rx.try_recv().is_err() {
                 if run_scan(&serial, &update_tx, &stop_rx).is_err() {
                     break;
@@ -101,21 +104,34 @@ fn run_scan(serial: &str, update_tx: &Sender<AppStorageUpdate>, stop_rx: &Receiv
         return Err(());
     }
 
-    for package in packages {
+    for chunk in packages.chunks(BATCH_SIZE) {
         if stop_rx.try_recv().is_ok() {
             return Err(());
         }
 
-        let total_bytes = fetch_package_storage(serial, &package)
-            .unwrap_or(0);
-        if update_tx
-            .send(AppStorageUpdate::PackageStorage(PackageStorage {
-                package,
-                total_bytes,
-            }))
-            .is_err()
-        {
-            return Err(());
+        let batch = match fetch_package_storage_batch(serial, chunk) {
+            Ok(batch) => batch,
+            Err(err) => {
+                if update_tx
+                    .send(AppStorageUpdate::Error(err.user_message()))
+                    .is_err()
+                {
+                    return Err(());
+                }
+                continue;
+            }
+        };
+
+        for (package, total_bytes) in batch {
+            if update_tx
+                .send(AppStorageUpdate::PackageStorage(PackageStorage {
+                    package,
+                    total_bytes,
+                }))
+                .is_err()
+            {
+                return Err(());
+            }
         }
     }
 
@@ -136,12 +152,95 @@ fn fetch_package_list(serial: &str) -> Result<Vec<String>, AdbError> {
     Ok(packages)
 }
 
-fn fetch_package_storage(serial: &str, package: &str) -> Result<u64, AdbError> {
-    let output = run_adb_for_serial(
-        serial,
-        &["shell", "cmd", "package", "get-package-storage-stats", package],
-    )?;
-    Ok(parse_storage_stats_total(&String::from_utf8_lossy(&output.stdout)))
+fn fetch_package_storage_batch(
+    serial: &str,
+    packages: &[String],
+) -> Result<Vec<(String, u64)>, AdbError> {
+    if packages.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let script = build_batch_script(packages);
+    let output = run_adb_for_serial(serial, &["shell", "sh", "-c", &script])?;
+    Ok(parse_batch_output(
+        &String::from_utf8_lossy(&output.stdout),
+        packages,
+    ))
+}
+
+fn build_batch_script(packages: &[String]) -> String {
+    packages
+        .iter()
+        .map(|package| {
+            let quoted = shell_quote(package);
+            format!(
+                "pkg={quoted}; \
+                 printf '@PKG@%s\\n' \"$pkg\"; \
+                 cmd package get-package-storage-stats \"$pkg\" 2>/dev/null || true"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn parse_batch_output(text: &str, packages: &[String]) -> Vec<(String, u64)> {
+    let mut results = Vec::new();
+    let mut current_package = None;
+    let mut current_body = String::new();
+
+    for line in text.lines() {
+        if let Some(caps) = PKG_MARKER.captures(line.trim()) {
+            if let Some(package) = current_package.take() {
+                results.push((package, parse_storage_stats_total(&current_body)));
+                current_body.clear();
+            }
+            current_package = Some(caps[1].to_string());
+            continue;
+        }
+
+        if current_package.is_some() {
+            if !current_body.is_empty() {
+                current_body.push('\n');
+            }
+            current_body.push_str(line);
+        }
+    }
+
+    if let Some(package) = current_package {
+        results.push((package, parse_storage_stats_total(&current_body)));
+    }
+
+    fill_missing_packages(packages, results)
+}
+
+fn fill_missing_packages(
+    expected: &[String],
+    mut results: Vec<(String, u64)>,
+) -> Vec<(String, u64)> {
+    for package in expected {
+        if !results.iter().any(|(name, _)| name == package) {
+            results.push((package.clone(), 0));
+        }
+    }
+
+    results.sort_by(|left, right| {
+        expected
+            .iter()
+            .position(|pkg| pkg == &left.0)
+            .unwrap_or(usize::MAX)
+            .cmp(
+                &expected
+                    .iter()
+                    .position(|pkg| pkg == &right.0)
+                    .unwrap_or(usize::MAX),
+            )
+    });
+
+    results
 }
 
 fn parse_storage_stats_total(text: &str) -> u64 {
@@ -191,5 +290,39 @@ dexopt artifacts: 54725272 bytes (52.19 Mb)
             .collect::<Vec<_>>();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0], "com.android.chrome");
+    }
+
+    #[test]
+    fn parse_batch_output_splits_packages() {
+        let sample = r#"@PKG@com.android.chrome
+code: 1000 bytes
+data: 2000 bytes
+@PKG@com.android.settings
+code: 500 bytes
+"#;
+
+        let expected = vec![
+            "com.android.chrome".to_string(),
+            "com.android.settings".to_string(),
+        ];
+        let parsed = parse_batch_output(sample, &expected);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "com.android.chrome");
+        assert_eq!(parsed[0].1, 3000);
+        assert_eq!(parsed[1].0, "com.android.settings");
+        assert_eq!(parsed[1].1, 500);
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_quote("com.example.app"), "'com.example.app'");
+        assert_eq!(shell_quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn batch_script_uses_device_side_pkg_variable() {
+        let script = build_batch_script(&["com.android.chrome".to_string()]);
+        assert!(script.contains("pkg='com.android.chrome'"));
+        assert!(script.contains("printf '@PKG@%s\\n' \"$pkg\""));
     }
 }
