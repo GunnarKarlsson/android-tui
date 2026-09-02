@@ -8,6 +8,7 @@ use std::time::Duration;
 use crossbeam_channel::{Receiver, Sender};
 use regex::Regex;
 
+use crate::background::signal_stop_and_detach;
 use crate::error::AdbError;
 
 static LOGCAT_LINE: LazyLock<Regex> = LazyLock::new(|| {
@@ -72,6 +73,7 @@ impl LogEntry {
 /// Streaming handle for an `adb logcat` subprocess.
 pub struct LogcatStream {
     stop_tx: Sender<()>,
+    child: Option<Arc<std::sync::Mutex<Child>>>,
     join_handle: Option<JoinHandle<()>>,
 }
 
@@ -94,24 +96,33 @@ impl LogcatStream {
         let (stop_tx, stop_rx) = crossbeam_channel::unbounded();
         let serial = serial.to_string();
 
-        let join_handle = thread::spawn(move || {
-            let child = match spawn_logcat_child(&serial, &filters) {
-                Ok(child) => child,
-                Err(err) => {
-                    let _ = entry_tx.send(LogEntry::raw(format!("logcat error: {err}")));
-                    return;
-                }
-            };
+        let child = match spawn_logcat_child(&serial, &filters) {
+            Ok(child) => child,
+            Err(err) => {
+                let _ = entry_tx.send(LogEntry::raw(format!("logcat error: {err}")));
+                return Ok((
+                    entry_rx,
+                    LogcatStream {
+                        stop_tx,
+                        child: None,
+                        join_handle: None,
+                    },
+                ));
+            }
+        };
 
-            let child = Arc::new(std::sync::Mutex::new(child));
-            stream_logcat(child.clone(), entry_tx, stop_rx);
-            kill_child(&child);
+        let child = Arc::new(std::sync::Mutex::new(child));
+        let reader_child = child.clone();
+        let join_handle = thread::spawn(move || {
+            stream_logcat(reader_child.clone(), entry_tx, stop_rx);
+            kill_child(&reader_child);
         });
 
         Ok((
             entry_rx,
             LogcatStream {
                 stop_tx,
+                child: Some(child),
                 join_handle: Some(join_handle),
             },
         ))
@@ -124,9 +135,10 @@ impl LogcatStream {
 
     fn shutdown(&mut self) {
         let _ = self.stop_tx.send(());
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.join();
+        if let Some(child) = self.child.take() {
+            kill_child(&child);
         }
+        signal_stop_and_detach(&self.stop_tx, &mut self.join_handle);
     }
 }
 

@@ -27,12 +27,6 @@ impl TerminalApp {
     }
 }
 
-impl Drop for TerminalApp {
-    fn drop(&mut self) {
-        self.inner.shutdown();
-    }
-}
-
 impl eframe::App for TerminalApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.inner.update_panels(ctx);
@@ -55,6 +49,10 @@ impl eframe::App for TerminalApp {
 
                 tiles::show(ui, &mut self.tile_tree, &mut self.inner);
             });
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.inner.shutdown();
     }
 }
 

@@ -2,6 +2,7 @@
 
 mod adb;
 mod app_storage;
+mod background;
 mod device;
 mod error;
 mod logcat;

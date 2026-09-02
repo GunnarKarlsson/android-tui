@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 use crossbeam_channel::{Receiver, Sender};
 
 use crate::adb::run_adb_for_serial;
+use crate::background::signal_stop_and_detach;
 use crate::error::AdbError;
 
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -154,10 +155,7 @@ impl StorageBreakdownPoller {
     }
 
     fn shutdown(&mut self) {
-        let _ = self.stop_tx.send(());
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.join();
-        }
+        signal_stop_and_detach(&self.stop_tx, &mut self.join_handle);
     }
 }
 
