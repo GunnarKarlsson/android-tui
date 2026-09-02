@@ -8,6 +8,7 @@ use crossbeam_channel::Receiver;
 use eframe::egui;
 
 use crate::panels;
+use crate::theme;
 
 pub const MAX_LOG_LINES: usize = 10_000;
 const MAX_DRAIN_PER_FRAME: usize = 500;
@@ -306,7 +307,7 @@ impl App {
 
         ui.horizontal(|ui| {
             ui.label("Devices");
-            if ui.button("Refresh").clicked() {
+            if theme::icon_button(ui, theme::icons::REFRESH).clicked() {
                 self.refresh_devices();
             }
         });

@@ -4,6 +4,7 @@ use adb_client::{DiskStats, NetworkStats};
 use eframe::egui;
 
 use crate::app::{App, CachedLogLine};
+use crate::theme;
 
 pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
@@ -23,18 +24,13 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
 
-    if app.selected_serial.is_none() {
-        ui.label("Select a device to start logcat.");
+    if app.selected_serial.is_none() || app.log_lines.is_empty() {
+        theme::panel_loading(ui);
         return;
     }
 
     let filter = app.logcat_filter.clone();
     let matching = filtered_line_indices(&app.log_lines, &filter);
-    ui.label(format!(
-        "Showing {} of {} lines",
-        matching.len(),
-        app.log_lines.len()
-    ));
 
     show_log_scroll(
         ui,
@@ -64,18 +60,13 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
 
-    if app.selected_serial.is_none() {
-        ui.label("Select a device to start logcat.");
+    if app.selected_serial.is_none() || app.error_lines.is_empty() {
+        theme::panel_loading(ui);
         return;
     }
 
     let filter = app.error_logcat_filter.clone();
     let matching = filtered_line_indices(&app.error_lines, &filter);
-    ui.label(format!(
-        "Showing {} of {} error lines",
-        matching.len(),
-        app.error_lines.len()
-    ));
 
     show_log_scroll(
         ui,
@@ -89,7 +80,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
 
 pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
     if app.selected_serial.is_none() {
-        ui.label("Select a device to view memory and disk stats.");
+        theme::panel_loading(ui);
         return;
     }
 
@@ -98,7 +89,7 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
     }
 
     let Some(stats) = &app.system_stats else {
-        ui.label("Polling device stats...");
+        theme::panel_loading(ui);
         return;
     };
 
@@ -114,7 +105,7 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
 
 pub fn network(ui: &mut egui::Ui, app: &App) {
     if app.selected_serial.is_none() {
-        ui.label("Select a device to view network activity.");
+        theme::panel_loading(ui);
         return;
     }
 
@@ -123,7 +114,7 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
     }
 
     let Some(stats) = &app.network_stats else {
-        ui.label("Polling…");
+        theme::panel_loading(ui);
         return;
     };
 

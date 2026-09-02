@@ -78,6 +78,30 @@ fn panel_inner_margin(ui: &Ui) -> egui::Margin {
     ui.style().spacing.window_margin
 }
 
+/// Nerd Font glyphs from JetBrains Mono (see `assets/fonts`).
+pub mod icons {
+    /// Circular arrows — `nf-md-refresh`.
+    pub const REFRESH: &str = "\u{f0450}";
+}
+
+/// Icon-only button.
+pub fn icon_button(ui: &mut Ui, icon: &str) -> egui::Response {
+    ui.button(icon)
+}
+/// Shown in every panel until it has data to display.
+pub fn panel_loading(ui: &mut Ui) {
+    ui.label("Loading...");
+}
+
+/// Panel title with the same inner margin as [`panel_content`].
+pub fn panel_header(ui: &mut Ui, title: impl Into<egui::RichText>) {
+    egui::Frame::NONE
+        .inner_margin(panel_inner_margin(ui))
+        .show(ui, |ui| {
+            ui.heading(title);
+        });
+}
+
 /// Wrap panel body content with the themed inner margin.
 pub fn panel_content<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
     egui::Frame::NONE

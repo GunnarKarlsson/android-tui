@@ -59,7 +59,7 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         _tile_id: TileId,
         pane: &mut PanelId,
     ) -> UiResponse {
-        ui.heading(pane.title());
+        theme::panel_header(ui, pane.title());
         ui.separator();
 
         theme::panel_content(ui, |ui| match pane {
