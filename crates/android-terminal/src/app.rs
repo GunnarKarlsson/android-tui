@@ -5,7 +5,7 @@ use adb_client::{
     Adb, AppStoragePoller, AppStorageUpdate, DeviceInfo, DeviceState, LogEntry, LogcatStream,
     MemoryStats, NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate,
     RamPoller, RamUpdate, StatsPoller, StatsUpdate, StorageBreakdown, StorageBreakdownPoller,
-    StorageBreakdownUpdate, SystemStats,
+    StorageBreakdownUpdate, StorageGaugePoller, StorageGaugeUpdate, StorageOverview, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -48,6 +48,10 @@ pub struct App {
     pub ram_poller: Option<RamPoller>,
     pub ram_memory: Option<MemoryStats>,
     pub ram_error: Option<String>,
+    pub storage_gauge_rx: Option<Receiver<StorageGaugeUpdate>>,
+    pub storage_gauge_poller: Option<StorageGaugePoller>,
+    pub storage_gauge: Option<StorageOverview>,
+    pub storage_gauge_error: Option<String>,
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
@@ -125,6 +129,10 @@ impl App {
             ram_poller: None,
             ram_memory: None,
             ram_error: None,
+            storage_gauge_rx: None,
+            storage_gauge_poller: None,
+            storage_gauge: None,
+            storage_gauge_error: None,
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
@@ -225,6 +233,14 @@ impl App {
             Err(err) => self.ram_error = Some(err.user_message()),
         }
 
+        match StorageGaugePoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.storage_gauge_rx = Some(rx);
+                self.storage_gauge_poller = Some(poller);
+            }
+            Err(err) => self.storage_gauge_error = Some(err.user_message()),
+        }
+
         match StorageBreakdownPoller::spawn(serial) {
             Ok((rx, poller)) => {
                 self.storage_breakdown_rx = Some(rx);
@@ -278,12 +294,15 @@ impl App {
         self.storage_breakdown_error = None;
         self.ram_memory = None;
         self.ram_error = None;
+        self.storage_gauge = None;
+        self.storage_gauge_error = None;
     }
 
     fn stop_streams(&mut self) {
         self.stop_logcat();
         self.stop_stats();
         self.stop_ram();
+        self.stop_storage_gauge();
         self.stop_network();
         self.stop_protocols();
         self.stop_app_storage();
@@ -330,6 +349,13 @@ impl App {
             poller.stop();
         }
         self.ram_rx = None;
+    }
+
+    fn stop_storage_gauge(&mut self) {
+        if let Some(poller) = self.storage_gauge_poller.take() {
+            poller.stop();
+        }
+        self.storage_gauge_rx = None;
     }
 
     fn stop_logcat(&mut self) {
@@ -517,6 +543,28 @@ impl App {
         updated
     }
 
+    fn drain_storage_gauge(&mut self) -> bool {
+        let Some(rx) = self.storage_gauge_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                StorageGaugeUpdate::Overview(overview) => {
+                    self.storage_gauge = Some(overview);
+                    self.storage_gauge_error = None;
+                    updated = true;
+                }
+                StorageGaugeUpdate::Error(message) => {
+                    self.storage_gauge_error = Some(message);
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
@@ -529,6 +577,9 @@ impl App {
             needs_repaint = true;
         }
         if self.drain_ram() {
+            needs_repaint = true;
+        }
+        if self.drain_storage_gauge() {
             needs_repaint = true;
         }
         if self.drain_network() {
@@ -552,9 +603,10 @@ impl App {
     }
 
     pub fn show_sidebar(&mut self, ui: &mut egui::Ui) {
-        const RAM_PANEL_HEIGHT: f32 = 220.0;
+        const GAUGE_PANEL_HEIGHT: f32 = 220.0;
         let gap = theme::PANEL_GAP;
-        let devices_height = (ui.available_height() - RAM_PANEL_HEIGHT - gap).max(120.0);
+        let gauges_height = GAUGE_PANEL_HEIGHT * 2.0 + gap;
+        let devices_height = (ui.available_height() - gauges_height - gap).max(120.0);
 
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), devices_height),
@@ -566,9 +618,15 @@ impl App {
         );
         ui.add_space(gap);
         ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), RAM_PANEL_HEIGHT),
+            egui::vec2(ui.available_width(), GAUGE_PANEL_HEIGHT),
             egui::Layout::top_down(egui::Align::LEFT),
             |ui| panels::ram_gauge(ui, self),
+        );
+        ui.add_space(gap);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), GAUGE_PANEL_HEIGHT),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| panels::storage_gauge(ui, self),
         );
     }
 

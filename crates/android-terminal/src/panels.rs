@@ -207,8 +207,60 @@ pub fn ram_gauge(ui: &mut egui::Ui, app: &App) {
     });
 }
 
+pub fn storage_gauge(ui: &mut egui::Ui, app: &App) {
+    theme::panel(ui, "Storage", |ui| {
+        if app.selected_serial.is_none() {
+            theme::panel_loading(ui);
+            return;
+        }
+
+        if let Some(error) = &app.storage_gauge_error {
+            theme::error_label(ui, error);
+        }
+
+        let Some(overview) = &app.storage_gauge else {
+            if app.storage_gauge_rx.is_some() {
+                theme::panel_loading(ui);
+            } else {
+                theme::panel_loading(ui);
+            }
+            return;
+        };
+
+        show_storage_donut(ui, overview);
+    });
+}
+
 fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
-    let fraction = memory.used_fraction();
+    show_usage_donut(
+        ui,
+        memory.used_fraction(),
+        format_gb_from_kb(memory.used_kb()),
+        format_gb_from_kb(memory.total_kb),
+        theme::colors::RAM_TRACK,
+        theme::colors::RAM_USED,
+    );
+}
+
+fn show_storage_donut(ui: &mut egui::Ui, overview: &StorageOverview) {
+    show_usage_donut(
+        ui,
+        overview.used_fraction(),
+        format_gb_from_bytes(overview.used_bytes),
+        format_gb_from_bytes(overview.total_bytes),
+        theme::colors::STORAGE_TRACK,
+        theme::colors::STORAGE_USED,
+    );
+}
+
+fn show_usage_donut(
+    ui: &mut egui::Ui,
+    fraction: f32,
+    used_label: String,
+    total_label: String,
+    track_color: egui::Color32,
+    used_color: egui::Color32,
+) {
     let percent = (fraction * 100.0).round() as u32;
     let chart_height = ui.available_height().max(120.0);
 
@@ -218,7 +270,7 @@ fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
     );
 
     let painter = ui.painter_at(rect);
-    paint_ram_donut(&painter, rect, fraction);
+    paint_usage_donut(&painter, rect, fraction, track_color, used_color);
 
     let center = rect.center();
     painter.text(
@@ -231,17 +283,19 @@ fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
     painter.text(
         center + egui::vec2(0.0, 18.0),
         egui::Align2::CENTER_CENTER,
-        format!(
-            "{} / {}",
-            format_gb_from_kb(memory.used_kb()),
-            format_gb_from_kb(memory.total_kb),
-        ),
+        format!("{used_label} / {total_label}"),
         egui::FontId::proportional(12.0),
         theme::colors::LOG_DEBUG,
     );
 }
 
-fn paint_ram_donut(painter: &egui::Painter, rect: egui::Rect, fraction: f32) {
+fn paint_usage_donut(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    fraction: f32,
+    track_color: egui::Color32,
+    used_color: egui::Color32,
+) {
     use std::f32::consts::TAU;
 
     let center = rect.center();
@@ -252,7 +306,7 @@ fn paint_ram_donut(painter: &egui::Painter, rect: egui::Rect, fraction: f32) {
     painter.circle_stroke(
         center,
         radius,
-        egui::Stroke::new(stroke_width, theme::colors::RAM_TRACK),
+        egui::Stroke::new(stroke_width, track_color),
     );
 
     let used = fraction.clamp(0.0, 1.0);
@@ -264,7 +318,7 @@ fn paint_ram_donut(painter: &egui::Painter, rect: egui::Rect, fraction: f32) {
             points,
             closed: false,
             fill: egui::Color32::TRANSPARENT,
-            stroke: egui::Stroke::new(stroke_width, theme::colors::RAM_USED).into(),
+            stroke: egui::Stroke::new(stroke_width, used_color).into(),
         }));
     }
 }
@@ -280,6 +334,10 @@ fn arc_points(center: egui::Pos2, radius: f32, start: f32, sweep: f32, steps: us
 
 fn format_gb_from_kb(kb: u64) -> String {
     format!("{:.1} GB", kb as f64 / 1_048_576.0)
+}
+
+fn format_gb_from_bytes(bytes: u64) -> String {
+    format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
 }
 
 pub fn network(ui: &mut egui::Ui, app: &App) {

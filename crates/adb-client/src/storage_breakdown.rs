@@ -27,6 +27,16 @@ pub struct StorageOverview {
     pub use_percent: u32,
 }
 
+impl StorageOverview {
+    pub fn used_fraction(&self) -> f32 {
+        if self.total_bytes == 0 {
+            0.0
+        } else {
+            self.used_bytes as f32 / self.total_bytes as f32
+        }
+    }
+}
+
 /// User storage total plus folder-based category sizes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageBreakdown {
@@ -165,9 +175,13 @@ impl Drop for StorageBreakdownPoller {
     }
 }
 
-fn fetch_storage_breakdown(serial: &str) -> Result<StorageBreakdown, AdbError> {
+pub fn fetch_storage_overview(serial: &str) -> Result<StorageOverview, AdbError> {
     let df = run_adb_for_serial(serial, &["shell", "df", "-k", USER_STORAGE_ROOT])?;
-    let overview = parse_user_storage_df(&String::from_utf8_lossy(&df.stdout))?;
+    parse_user_storage_df(&String::from_utf8_lossy(&df.stdout))
+}
+
+fn fetch_storage_breakdown(serial: &str) -> Result<StorageBreakdown, AdbError> {
+    let overview = fetch_storage_overview(serial)?;
 
     let folder_paths: Vec<String> = FOLDER_SPECS
         .iter()

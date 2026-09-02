@@ -11,6 +11,7 @@ mod protocols;
 mod ram;
 mod stats;
 mod storage_breakdown;
+mod storage_gauge;
 
 pub use adb::Adb;
 pub use app_storage::{AppStoragePoller, AppStorageUpdate, PackageStorage};
@@ -22,6 +23,7 @@ pub use protocols::{AppTraffic, ProtocolPoller, ProtocolStats, ProtocolUpdate};
 pub use ram::{RamPoller, RamUpdate};
 pub use stats::{MemoryStats, StatsPoller, StatsUpdate, SystemStats};
 pub use storage_breakdown::{
-    StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate, StorageCategory,
-    StorageOverview,
+    fetch_storage_overview, StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate,
+    StorageCategory, StorageOverview,
 };
+pub use storage_gauge::{StorageGaugePoller, StorageGaugeUpdate};
