@@ -4,7 +4,7 @@ use std::time::Duration;
 use adb_client::{
     Adb, AppStoragePoller, AppStorageUpdate, DeviceInfo, DeviceState, LogEntry, LogcatStream,
     NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate, StatsPoller,
-    StatsUpdate, SystemStats,
+    StatsUpdate, StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -39,6 +39,10 @@ pub struct App {
     pub app_storage_rx: Option<Receiver<AppStorageUpdate>>,
     pub app_storage_poller: Option<AppStoragePoller>,
     pub app_storage: panels::AppStorageState,
+    pub storage_breakdown_rx: Option<Receiver<StorageBreakdownUpdate>>,
+    pub storage_breakdown_poller: Option<StorageBreakdownPoller>,
+    pub storage_breakdown: Option<StorageBreakdown>,
+    pub storage_breakdown_error: Option<String>,
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
@@ -108,6 +112,10 @@ impl App {
             app_storage_rx: None,
             app_storage_poller: None,
             app_storage: panels::AppStorageState::default(),
+            storage_breakdown_rx: None,
+            storage_breakdown_poller: None,
+            storage_breakdown: None,
+            storage_breakdown_error: None,
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
@@ -200,6 +208,14 @@ impl App {
             Err(err) => self.stats_error = Some(err.user_message()),
         }
 
+        match StorageBreakdownPoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.storage_breakdown_rx = Some(rx);
+                self.storage_breakdown_poller = Some(poller);
+            }
+            Err(err) => self.storage_breakdown_error = Some(err.user_message()),
+        }
+
         match NetworkPoller::spawn(serial) {
             Ok((rx, poller)) => {
                 self.network_rx = Some(rx);
@@ -241,6 +257,8 @@ impl App {
         self.protocol_stats = None;
         self.protocol_error = None;
         self.app_storage = panels::AppStorageState::default();
+        self.storage_breakdown = None;
+        self.storage_breakdown_error = None;
     }
 
     fn stop_streams(&mut self) {
@@ -249,6 +267,7 @@ impl App {
         self.stop_network();
         self.stop_protocols();
         self.stop_app_storage();
+        self.stop_storage_breakdown();
     }
 
     fn stop_network(&mut self) {
@@ -270,6 +289,13 @@ impl App {
             poller.stop();
         }
         self.app_storage_rx = None;
+    }
+
+    fn stop_storage_breakdown(&mut self) {
+        if let Some(poller) = self.storage_breakdown_poller.take() {
+            poller.stop();
+        }
+        self.storage_breakdown_rx = None;
     }
 
     fn stop_stats(&mut self) {
@@ -420,6 +446,28 @@ impl App {
         updated
     }
 
+    fn drain_storage_breakdown(&mut self) -> bool {
+        let Some(rx) = self.storage_breakdown_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                StorageBreakdownUpdate::Breakdown(breakdown) => {
+                    self.storage_breakdown = Some(breakdown);
+                    self.storage_breakdown_error = None;
+                    updated = true;
+                }
+                StorageBreakdownUpdate::Error(message) => {
+                    self.storage_breakdown_error = Some(message);
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
@@ -438,6 +486,9 @@ impl App {
             needs_repaint = true;
         }
         if self.drain_app_storage() {
+            needs_repaint = true;
+        }
+        if self.drain_storage_breakdown() {
             needs_repaint = true;
         }
         if needs_repaint {

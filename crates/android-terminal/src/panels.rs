@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use adb_client::{DiskStats, NetworkStats, ProtocolStats};
+use adb_client::{NetworkStats, ProtocolStats, StorageCategory, StorageOverview};
 use eframe::egui;
 
 use crate::app::{App, CachedLogLine};
@@ -153,6 +153,9 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.stats_error {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
+    if let Some(error) = &app.storage_breakdown_error {
+        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+    }
     if let Some(error) = &app.app_storage.error {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
@@ -167,10 +170,12 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
                 ui.label("Loading memory…");
             }
             ui.separator();
-            if let Some(stats) = &app.system_stats {
-                show_disk_stats(ui, &stats.disks);
-            } else if app.stats_rx.is_some() {
-                ui.label("Loading disk…");
+            if let Some(breakdown) = &app.storage_breakdown {
+                show_storage_overview(ui, &breakdown.overview);
+                ui.separator();
+                show_storage_categories(ui, &breakdown.categories);
+            } else if app.storage_breakdown_rx.is_some() {
+                ui.label("Loading storage…");
             }
             ui.separator();
             show_app_storage(ui, &app.app_storage);
@@ -289,28 +294,45 @@ fn show_memory_stats(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
     ));
 }
 
-fn show_disk_stats(ui: &mut egui::Ui, disks: &[DiskStats]) {
-    ui.label("Disk");
+fn show_storage_overview(ui: &mut egui::Ui, overview: &StorageOverview) {
+    ui.label("Storage");
+    ui.label(format!(
+        "{} used / {} total ({} free)",
+        format_bytes(overview.used_bytes),
+        format_bytes(overview.total_bytes),
+        format_bytes(overview.available_bytes),
+    ));
 
-    if disks.is_empty() {
-        ui.label("No filesystems reported.");
-        return;
-    }
+    let fraction = if overview.total_bytes == 0 {
+        0.0
+    } else {
+        overview.used_bytes as f32 / overview.total_bytes as f32
+    };
+    ui.add(styled_progress_bar(
+        fraction,
+        format!("{}% used", overview.use_percent),
+        disk_bar_color(fraction),
+    ));
+}
 
-    for disk in disks {
-        ui.horizontal(|ui| {
-            ui.label(&disk.mount_point);
-            ui.label(format!("{} / {}", disk.used, disk.size));
+fn show_storage_categories(ui: &mut egui::Ui, categories: &[StorageCategory]) {
+    ui.label("Storage breakdown");
+
+    egui::Grid::new("storage_categories")
+        .num_columns(2)
+        .spacing([12.0, 4.0])
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label("Category");
+            ui.label("Size");
+            ui.end_row();
+
+            for category in categories {
+                ui.label(&category.name);
+                ui.label(format_bytes(category.bytes));
+                ui.end_row();
+            }
         });
-
-        let fraction = parse_use_fraction(&disk.use_percent);
-        ui.add(styled_progress_bar(
-            fraction,
-            format!("{} used — {}", disk.use_percent, disk.filesystem),
-            disk_bar_color(fraction),
-        ));
-        ui.add_space(4.0);
-    }
 }
 
 fn show_app_storage(ui: &mut egui::Ui, storage: &AppStorageState) {
@@ -458,15 +480,6 @@ fn filtered_line_indices(lines: &VecDeque<CachedLogLine>, filter: &str) -> Vec<u
         .filter(|(_, line)| line.matches_filter(&filter_lower))
         .map(|(index, _)| index)
         .collect()
-}
-
-fn parse_use_fraction(use_percent: &str) -> f32 {
-    use_percent
-        .trim()
-        .trim_end_matches('%')
-        .parse::<f32>()
-        .map(|value| (value / 100.0).clamp(0.0, 1.0))
-        .unwrap_or(0.0)
 }
 
 fn disk_bar_color(fraction: f32) -> egui::Color32 {

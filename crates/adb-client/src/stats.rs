@@ -41,22 +41,10 @@ impl MemoryStats {
     }
 }
 
-/// Disk usage from `df -h`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiskStats {
-    pub filesystem: String,
-    pub size: String,
-    pub used: String,
-    pub available: String,
-    pub use_percent: String,
-    pub mount_point: String,
-}
-
-/// Snapshot of device memory and disk usage.
+/// Snapshot of device memory usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SystemStats {
     pub memory: MemoryStats,
-    pub disks: Vec<DiskStats>,
     pub timestamp: SystemTime,
 }
 
@@ -137,14 +125,10 @@ impl Drop for StatsPoller {
 
 pub(crate) fn fetch_system_stats(serial: &str) -> Result<SystemStats, AdbError> {
     let meminfo = run_adb_for_serial(serial, &["shell", "cat", "/proc/meminfo"])?;
-    let df = run_adb_for_serial(serial, &["shell", "df", "-h"])?;
-
     let memory = parse_meminfo(&String::from_utf8_lossy(&meminfo.stdout))?;
-    let disks = parse_df(&String::from_utf8_lossy(&df.stdout));
 
     Ok(SystemStats {
         memory,
-        disks,
         timestamp: SystemTime::now(),
     })
 }
@@ -191,34 +175,6 @@ fn parse_kb_value(raw: &str) -> Result<u64, AdbError> {
 
     kb.parse()
         .map_err(|_| AdbError::ParseFailed(format!("invalid meminfo kB value: {raw}")))
-}
-
-fn parse_df(text: &str) -> Vec<DiskStats> {
-    text.lines()
-        .skip(1)
-        .filter_map(parse_df_line)
-        .collect()
-}
-
-fn parse_df_line(line: &str) -> Option<DiskStats> {
-    let line = line.trim();
-    if line.is_empty() {
-        return None;
-    }
-
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 6 {
-        return None;
-    }
-
-    Some(DiskStats {
-        filesystem: parts[0].to_string(),
-        size: parts[1].to_string(),
-        used: parts[2].to_string(),
-        available: parts[3].to_string(),
-        use_percent: parts[4].to_string(),
-        mount_point: parts[5..].join(" "),
-    })
 }
 
 fn sleep_until_stop(stop_rx: &Receiver<()>, duration: Duration) {
@@ -274,19 +230,5 @@ Cached:           222222 kB
         assert_eq!(memory.buffers_kb, 111_111);
         assert_eq!(memory.cached_kb, 222_222);
         assert_eq!(memory.used_kb(), 8_025_332 - 3_456_789);
-    }
-
-    #[test]
-    fn parse_df_sample() {
-        let sample = r#"Filesystem       Size Used Avail Use% Mounted on
-/dev/block/dm-5   55G  12G   42G  23% /data
-tmpfs            3.8G    0  3.8G   0% /dev
-"#;
-
-        let disks = parse_df(sample);
-        assert_eq!(disks.len(), 2);
-        assert_eq!(disks[0].filesystem, "/dev/block/dm-5");
-        assert_eq!(disks[0].mount_point, "/data");
-        assert_eq!(disks[0].use_percent, "23%");
     }
 }

@@ -8,6 +8,7 @@ mod logcat;
 mod network;
 mod protocols;
 mod stats;
+mod storage_breakdown;
 
 pub use adb::Adb;
 pub use app_storage::{AppStoragePoller, AppStorageUpdate, PackageStorage};
@@ -16,4 +17,8 @@ pub use error::AdbError;
 pub use logcat::{LogEntry, LogcatStream};
 pub use network::{NetworkInterfaceStats, NetworkPoller, NetworkStats, NetworkUpdate};
 pub use protocols::{AppTraffic, ProtocolPoller, ProtocolStats, ProtocolUpdate};
-pub use stats::{DiskStats, MemoryStats, StatsPoller, StatsUpdate, SystemStats};
+pub use stats::{MemoryStats, StatsPoller, StatsUpdate, SystemStats};
+pub use storage_breakdown::{
+    StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate, StorageCategory,
+    StorageOverview,
+};
