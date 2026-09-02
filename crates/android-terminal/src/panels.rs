@@ -170,11 +170,6 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
 }
 
 pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
-    if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
-        return;
-    }
-
     if let Some(error) = &app.stats_error {
         theme::error_label(ui, error);
     }
@@ -185,27 +180,34 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
         theme::error_label(ui, error);
     }
 
-    egui::ScrollArea::both()
-        .id_salt(egui::Id::new("memory_disk_scroll"))
-        .auto_shrink([false, false])
-        .max_height(ui.available_height())
-        .show(ui, |ui| {
-            if let Some(stats) = &app.system_stats {
-                show_memory_stats(ui, &stats.memory);
-            } else if app.stats_rx.is_some() {
-                ui.label("Loading memory…");
-            }
-            ui.separator();
-            if let Some(breakdown) = &app.storage_breakdown {
-                show_storage_overview(ui, &breakdown.overview);
+    theme::panel_body(ui, theme::colors::MEMORY_DISK_BODY, |ui| {
+        if app.selected_serial.is_none() {
+            theme::panel_loading(ui);
+            return;
+        }
+
+        egui::ScrollArea::both()
+            .id_salt(egui::Id::new("memory_disk_scroll"))
+            .auto_shrink([false, false])
+            .max_height(ui.available_height())
+            .show(ui, |ui| {
+                if let Some(stats) = &app.system_stats {
+                    show_memory_stats(ui, &stats.memory);
+                } else if app.stats_rx.is_some() {
+                    ui.label("Loading memory…");
+                }
                 ui.separator();
-                show_storage_categories(ui, &breakdown.categories);
-            } else if app.storage_breakdown_rx.is_some() {
-                ui.label("Loading storage…");
-            }
-            ui.separator();
-            show_app_storage(ui, &app.app_storage);
-        });
+                if let Some(breakdown) = &app.storage_breakdown {
+                    show_storage_overview(ui, &breakdown.overview);
+                    ui.separator();
+                    show_storage_categories(ui, &breakdown.categories);
+                } else if app.storage_breakdown_rx.is_some() {
+                    ui.label("Loading storage…");
+                }
+                ui.separator();
+                show_app_storage(ui, &app.app_storage);
+            });
+    });
 }
 
 pub fn ram_gauge(ui: &mut egui::Ui, app: &App) {
@@ -366,52 +368,56 @@ fn format_gb_from_bytes(bytes: u64) -> String {
 }
 
 pub fn network(ui: &mut egui::Ui, app: &App) {
-    if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
-        return;
-    }
-
     if let Some(error) = &app.network_error {
         theme::error_label(ui, error);
     }
 
-    let Some(stats) = &app.network_stats else {
-        if app.network_rx.is_some() {
-            ui.label("Fetching network stats…");
-        } else {
+    theme::panel_body(ui, theme::colors::NETWORK_BODY, |ui| {
+        if app.selected_serial.is_none() {
             theme::panel_loading(ui);
+            return;
         }
-        return;
-    };
 
-    if stats.is_empty() {
-        ui.label("No network interfaces reported.");
-        return;
-    }
+        let Some(stats) = &app.network_stats else {
+            if app.network_rx.is_some() {
+                ui.label("Fetching network stats…");
+            } else {
+                theme::panel_loading(ui);
+            }
+            return;
+        };
 
-    show_network_table(ui, stats);
+        if stats.is_empty() {
+            ui.label("No network interfaces reported.");
+            return;
+        }
+
+        show_network_table(ui, stats);
+    });
 }
 
 pub fn protocols(ui: &mut egui::Ui, app: &App) {
-    if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
-        return;
-    }
-
     if let Some(error) = &app.protocol_error {
         theme::error_label(ui, error);
     }
 
-    let Some(stats) = &app.protocol_stats else {
-        if app.protocol_rx.is_some() {
-            ui.label("Fetching app traffic…");
-        } else {
+    theme::panel_body(ui, theme::colors::APP_TRAFFIC_BODY, |ui| {
+        if app.selected_serial.is_none() {
             theme::panel_loading(ui);
+            return;
         }
-        return;
-    };
 
-    show_protocol_stats(ui, stats);
+        let Some(stats) = &app.protocol_stats else {
+            if app.protocol_rx.is_some() {
+                ui.label("Fetching app traffic…");
+            } else {
+                theme::panel_loading(ui);
+            }
+            return;
+        };
+
+        show_protocol_stats(ui, stats);
+    });
 }
 
 fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {

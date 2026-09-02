@@ -48,6 +48,13 @@ pub mod colors {
     pub const STORAGE_USED: Color32 = Color32::from_rgb(240, 120, 60);
     pub const STORAGE_TRACK: Color32 = Color32::from_rgb(55, 40, 35);
 
+    /// Memory / Disk panel body text.
+    pub const MEMORY_DISK_BODY: Color32 = Color32::from_rgb(180, 230, 80);
+    /// Network Activity panel body text.
+    pub const NETWORK_BODY: Color32 = Color32::from_rgb(0, 180, 240);
+    /// App Traffic panel body text.
+    pub const APP_TRAFFIC_BODY: Color32 = Color32::from_rgb(200, 170, 255);
+
     /// Background and foreground pairs for logcat tag highlight badges.
     pub const TAG_HIGHLIGHTS: &[(Color32, Color32)] = &[
         (Color32::from_rgb(58, 68, 82), Color32::from_rgb(210, 218, 228)),
@@ -107,6 +114,17 @@ fn apply_shared_style(style: &mut egui::Style) {
 /// Show an error label using the theme error color.
 pub fn error_label(ui: &mut Ui, text: impl AsRef<str>) {
     ui.colored_label(colors::ERROR, text.as_ref());
+}
+
+/// Run panel body content with a dedicated text color (headers stay on the default style).
+pub fn panel_body<R>(ui: &mut Ui, color: egui::Color32, add_body: impl FnOnce(&mut Ui) -> R) -> R {
+    let mut style = ui.style().as_ref().clone();
+    style.visuals.override_text_color = Some(color);
+    ui.scope(|ui| {
+        ui.set_style(style);
+        add_body(ui)
+    })
+    .inner
 }
 
 fn panel_separator(ui: &mut Ui) {
