@@ -38,6 +38,8 @@ pub struct App {
     pub error_auto_update_feed: bool,
     pub logcat_show_timestamps: bool,
     pub error_show_timestamps: bool,
+    pub logcat_line_spacing: bool,
+    pub error_line_spacing: bool,
     pub logcat_filter: String,
     pub error_logcat_filter: String,
 }
@@ -98,6 +100,8 @@ impl App {
             error_auto_update_feed: true,
             logcat_show_timestamps: true,
             error_show_timestamps: true,
+            logcat_line_spacing: false,
+            error_line_spacing: false,
             logcat_filter: String::new(),
             error_logcat_filter: String::new(),
         };

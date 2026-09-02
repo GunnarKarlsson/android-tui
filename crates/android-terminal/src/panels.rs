@@ -38,6 +38,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         &matching,
         app.auto_update_feed,
         app.logcat_show_timestamps,
+        app.logcat_line_spacing,
         egui::Id::new("logcat_all_scroll"),
         LogScrollStyle::ByLevel,
     );
@@ -75,6 +76,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         &matching,
         app.error_auto_update_feed,
         app.error_show_timestamps,
+        app.error_line_spacing,
         egui::Id::new("logcat_errors_scroll"),
         LogScrollStyle::ErrorsOnly,
     );
@@ -325,11 +327,17 @@ fn show_log_scroll(
     matching: &[usize],
     stick_to_bottom: bool,
     show_timestamps: bool,
+    line_spacing: bool,
     scroll_id: egui::Id,
     style: LogScrollStyle,
 ) {
     ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
-    let row_height = ui.text_style_height(&egui::TextStyle::Monospace);
+    let text_height = ui.text_style_height(&egui::TextStyle::Monospace);
+    let row_height = if line_spacing {
+        text_height * 3.0
+    } else {
+        text_height
+    };
     let total_rows = matching.len();
 
     egui::ScrollArea::vertical()
@@ -343,7 +351,12 @@ fn show_log_scroll(
                     LogScrollStyle::ErrorsOnly => error_line_color(line.level),
                     LogScrollStyle::ByLevel => log_level_color(line.level),
                 };
-                ui.colored_label(color, line.display(show_timestamps));
+                let text = line.display(show_timestamps);
+                if line_spacing {
+                    ui.colored_label(color, format!("{text}\n\n"));
+                } else {
+                    ui.colored_label(color, text);
+                }
             }
         });
 }

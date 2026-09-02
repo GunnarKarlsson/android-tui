@@ -87,6 +87,8 @@ pub mod icons {
     pub const REFRESH: &str = "\u{f0450}";
     /// Clock — `nf-md-clock`.
     pub const CLOCK: &str = "\u{f0954}";
+    /// Two horizontal bars — `nf-md-view-headline`.
+    pub const LINE_SPACING: &str = "\u{f0571}";
 }
 
 const ICON_BUTTON_PADDING: f32 = 6.0;

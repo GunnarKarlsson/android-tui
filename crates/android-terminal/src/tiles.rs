@@ -62,31 +62,31 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         match pane {
             PanelId::LogcatAll => {
                 let mut show_timestamps = self.app.logcat_show_timestamps;
+                let mut line_spacing = self.app.logcat_line_spacing;
                 theme::panel_with_header_actions(
                     ui,
                     pane.title(),
                     |ui| {
-                        if theme::icon_toggle(ui, theme::icons::CLOCK, show_timestamps).clicked() {
-                            show_timestamps = !show_timestamps;
-                        }
+                        logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
                     |ui| panels::logcat_all(ui, self.app),
                 );
                 self.app.logcat_show_timestamps = show_timestamps;
+                self.app.logcat_line_spacing = line_spacing;
             }
             PanelId::LogcatErrors => {
                 let mut show_timestamps = self.app.error_show_timestamps;
+                let mut line_spacing = self.app.error_line_spacing;
                 theme::panel_with_header_actions(
                     ui,
                     pane.title(),
                     |ui| {
-                        if theme::icon_toggle(ui, theme::icons::CLOCK, show_timestamps).clicked() {
-                            show_timestamps = !show_timestamps;
-                        }
+                        logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
                     |ui| panels::logcat_errors(ui, self.app),
                 );
                 self.app.error_show_timestamps = show_timestamps;
+                self.app.error_line_spacing = line_spacing;
             }
             PanelId::SystemStats => {
                 theme::panel(ui, pane.title(), |ui| {
@@ -99,5 +99,14 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         }
 
         UiResponse::None
+    }
+}
+
+fn logcat_header_toggles(ui: &mut egui::Ui, show_timestamps: &mut bool, line_spacing: &mut bool) {
+    if theme::icon_toggle(ui, theme::icons::CLOCK, *show_timestamps).clicked() {
+        *show_timestamps = !*show_timestamps;
+    }
+    if theme::icon_toggle(ui, theme::icons::LINE_SPACING, *line_spacing).clicked() {
+        *line_spacing = !*line_spacing;
     }
 }
