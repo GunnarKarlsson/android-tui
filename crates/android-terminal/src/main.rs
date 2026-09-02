@@ -31,25 +31,9 @@ impl eframe::App for TerminalApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.inner.update_panels(ctx);
 
-        eframe::egui::SidePanel::left("devices")
-            .resizable(true)
-            .default_width(260.0)
-            .show_separator_line(false)
-            .frame(theme::shell_frame(ctx))
-            .show(ctx, |ui| {
-                theme::canvas_margin_frame().show(ui, |ui| {
-                    self.inner.show_sidebar(ui);
-                });
-            });
-
         eframe::egui::CentralPanel::default()
             .frame(theme::shell_frame(ctx))
             .show(ctx, |ui| {
-                if self.inner.adb_error.is_some() {
-                    ui.label("ADB is not available. See the devices panel for details.");
-                    return;
-                }
-
                 theme::canvas_margin_frame().show(ui, |ui| {
                     tiles::show(ui, &mut self.tile_tree, &mut self.inner);
                 });

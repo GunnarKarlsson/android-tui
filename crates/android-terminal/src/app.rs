@@ -602,34 +602,6 @@ impl App {
         }
     }
 
-    pub fn show_sidebar(&mut self, ui: &mut egui::Ui) {
-        const GAUGE_PANEL_HEIGHT: f32 = 220.0;
-        let gap = theme::PANEL_GAP;
-        let gauges_height = GAUGE_PANEL_HEIGHT * 2.0 + gap;
-        let devices_height = (ui.available_height() - gauges_height - gap).max(120.0);
-
-        ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), devices_height),
-            egui::Layout::top_down(egui::Align::LEFT),
-            |ui| {
-                ui.set_min_height(devices_height);
-                self.show_devices(ui);
-            },
-        );
-        ui.add_space(gap);
-        ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), GAUGE_PANEL_HEIGHT),
-            egui::Layout::top_down(egui::Align::LEFT),
-            |ui| panels::ram_gauge(ui, self),
-        );
-        ui.add_space(gap);
-        ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), GAUGE_PANEL_HEIGHT),
-            egui::Layout::top_down(egui::Align::LEFT),
-            |ui| panels::storage_gauge(ui, self),
-        );
-    }
-
     pub fn show_devices(&mut self, ui: &mut egui::Ui) {
         let mut refresh = false;
         theme::panel_with_header_actions(
@@ -665,6 +637,8 @@ impl App {
 
         egui::ScrollArea::vertical()
             .id_salt(egui::Id::new("device_list"))
+            .auto_shrink([false, false])
+            .max_height(ui.available_height())
             .show(ui, |ui| {
                 let device_count = self.devices.len();
                 for index in 0..device_count {

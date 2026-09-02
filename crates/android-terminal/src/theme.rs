@@ -297,6 +297,7 @@ pub fn panel_with_header_actions<R>(
 ) -> R {
     panel_frame(ui)
         .show(ui, |ui| {
+            ui.set_min_size(ui.max_rect().size());
             ui.horizontal(|ui| {
                 ui.heading(title);
                 add_header_actions(ui);

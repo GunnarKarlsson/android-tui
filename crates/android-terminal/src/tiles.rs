@@ -7,6 +7,9 @@ use crate::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelId {
+    Devices,
+    Ram,
+    Storage,
     LogcatAll,
     LogcatErrors,
     SystemStats,
@@ -17,6 +20,9 @@ pub enum PanelId {
 impl PanelId {
     fn title(self) -> &'static str {
         match self {
+            PanelId::Devices => "Devices",
+            PanelId::Ram => "RAM",
+            PanelId::Storage => "Storage",
             PanelId::LogcatAll => "Logcat (All)",
             PanelId::LogcatErrors => "Logcat (Errors)",
             PanelId::SystemStats => "Memory / Disk",
@@ -29,18 +35,60 @@ impl PanelId {
 pub fn create_default_tree() -> Tree<PanelId> {
     let mut tiles = egui_tiles::Tiles::default();
 
+    let devices = tiles.insert_pane(PanelId::Devices);
+    let ram = tiles.insert_pane(PanelId::Ram);
+    let storage = tiles.insert_pane(PanelId::Storage);
+    let left_column = tiles.insert_vertical_tile(vec![devices, ram, storage]);
+
     let logcat_all = tiles.insert_pane(PanelId::LogcatAll);
-    let logcat_errors = tiles.insert_pane(PanelId::LogcatErrors);
     let system_stats = tiles.insert_pane(PanelId::SystemStats);
+    let middle_column = tiles.insert_vertical_tile(vec![logcat_all, system_stats]);
+
+    let logcat_errors = tiles.insert_pane(PanelId::LogcatErrors);
     let network = tiles.insert_pane(PanelId::Network);
     let protocols = tiles.insert_pane(PanelId::Protocols);
+    let right_column = tiles.insert_vertical_tile(vec![logcat_errors, network, protocols]);
 
-    let top_row = tiles.insert_horizontal_tile(vec![logcat_all, logcat_errors]);
-    let network_column = tiles.insert_vertical_tile(vec![network, protocols]);
-    let bottom_row = tiles.insert_horizontal_tile(vec![system_stats, network_column]);
-    let root = tiles.insert_vertical_tile(vec![top_row, bottom_row]);
+    let root = tiles.insert_horizontal_tile(vec![left_column, middle_column, right_column]);
+
+    set_linear_shares(
+        &mut tiles,
+        root,
+        &[(left_column, 1.0), (middle_column, 2.5), (right_column, 2.5)],
+    );
+    set_linear_shares(
+        &mut tiles,
+        left_column,
+        &[(devices, 2.0), (ram, 1.0), (storage, 1.0)],
+    );
+    set_linear_shares(
+        &mut tiles,
+        middle_column,
+        &[(logcat_all, 2.0), (system_stats, 1.0)],
+    );
+    set_linear_shares(
+        &mut tiles,
+        right_column,
+        &[(logcat_errors, 2.0), (network, 1.0), (protocols, 1.0)],
+    );
 
     Tree::new("android_terminal_tiles", root, tiles)
+}
+
+fn set_linear_shares(
+    tiles: &mut egui_tiles::Tiles<PanelId>,
+    container_id: egui_tiles::TileId,
+    shares: &[(egui_tiles::TileId, f32)],
+) {
+    let Some(egui_tiles::Tile::Container(egui_tiles::Container::Linear(linear))) =
+        tiles.get_mut(container_id)
+    else {
+        return;
+    };
+
+    for (tile_id, share) in shares {
+        linear.shares.set_share(*tile_id, *share);
+    }
 }
 
 pub fn show(ui: &mut egui::Ui, tree: &mut Tree<PanelId>, app: &mut App) {
@@ -77,6 +125,15 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         pane: &mut PanelId,
     ) -> UiResponse {
         match pane {
+            PanelId::Devices => {
+                self.app.show_devices(ui);
+            }
+            PanelId::Ram => {
+                panels::ram_gauge(ui, self.app);
+            }
+            PanelId::Storage => {
+                panels::storage_gauge(ui, self.app);
+            }
             PanelId::LogcatAll => {
                 let mut show_timestamps = self.app.logcat_show_timestamps;
                 let mut line_spacing = self.app.logcat_line_spacing;
