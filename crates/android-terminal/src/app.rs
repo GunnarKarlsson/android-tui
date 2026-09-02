@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
+use std::time::Duration;
 
 use adb_client::{
-    Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, NetworkPoller, NetworkUpdate,
-    ProtocolPoller, ProtocolStats, ProtocolUpdate, StatsPoller, StatsUpdate, SystemStats,
+    Adb, AppStoragePoller, AppStorageUpdate, DeviceInfo, DeviceState, LogEntry, LogcatStream,
+    NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate, StatsPoller,
+    StatsUpdate, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -34,6 +36,9 @@ pub struct App {
     pub network_error: Option<String>,
     pub protocol_stats: Option<ProtocolStats>,
     pub protocol_error: Option<String>,
+    pub app_storage_rx: Option<Receiver<AppStorageUpdate>>,
+    pub app_storage_poller: Option<AppStoragePoller>,
+    pub app_storage: panels::AppStorageState,
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
@@ -100,6 +105,9 @@ impl App {
             network_error: None,
             protocol_stats: None,
             protocol_error: None,
+            app_storage_rx: None,
+            app_storage_poller: None,
+            app_storage: panels::AppStorageState::default(),
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
@@ -207,6 +215,16 @@ impl App {
             }
             Err(err) => self.protocol_error = Some(err.user_message()),
         }
+
+        // Heavy per-package scan; start after fast pollers and an internal delay.
+        match AppStoragePoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.app_storage_rx = Some(rx);
+                self.app_storage_poller = Some(poller);
+                self.app_storage.scanning = true;
+            }
+            Err(err) => self.app_storage.error = Some(err.user_message()),
+        }
     }
 
     fn clear_device_data(&mut self) {
@@ -222,6 +240,7 @@ impl App {
         self.network_error = None;
         self.protocol_stats = None;
         self.protocol_error = None;
+        self.app_storage = panels::AppStorageState::default();
     }
 
     fn stop_streams(&mut self) {
@@ -229,6 +248,7 @@ impl App {
         self.stop_stats();
         self.stop_network();
         self.stop_protocols();
+        self.stop_app_storage();
     }
 
     fn stop_network(&mut self) {
@@ -243,6 +263,13 @@ impl App {
             poller.stop();
         }
         self.protocol_rx = None;
+    }
+
+    fn stop_app_storage(&mut self) {
+        if let Some(poller) = self.app_storage_poller.take() {
+            poller.stop();
+        }
+        self.app_storage_rx = None;
     }
 
     fn stop_stats(&mut self) {
@@ -358,6 +385,41 @@ impl App {
         updated
     }
 
+    fn drain_app_storage(&mut self) -> bool {
+        let Some(rx) = self.app_storage_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                AppStorageUpdate::PackageList(packages) => {
+                    if self.app_storage.packages.is_empty() {
+                        self.app_storage.set_packages(packages);
+                    } else {
+                        self.app_storage.merge_packages(packages);
+                    }
+                    self.app_storage.error = None;
+                    updated = true;
+                }
+                AppStorageUpdate::PackageStorage(storage) => {
+                    self.app_storage
+                        .set_size(&storage.package, storage.total_bytes);
+                    updated = true;
+                }
+                AppStorageUpdate::ScanComplete => {
+                    self.app_storage.scanning = false;
+                    updated = true;
+                }
+                AppStorageUpdate::Error(message) => {
+                    self.app_storage.error = Some(message);
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
@@ -375,8 +437,14 @@ impl App {
         if self.drain_protocols() {
             needs_repaint = true;
         }
+        if self.drain_app_storage() {
+            needs_repaint = true;
+        }
         if needs_repaint {
             ctx.request_repaint();
+        }
+        if self.selected_serial.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(200));
         }
     }
 

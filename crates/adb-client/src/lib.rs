@@ -1,6 +1,7 @@
 //! ADB client library for Android device communication.
 
 mod adb;
+mod app_storage;
 mod device;
 mod error;
 mod logcat;
@@ -9,6 +10,7 @@ mod protocols;
 mod stats;
 
 pub use adb::Adb;
+pub use app_storage::{AppStoragePoller, AppStorageUpdate, PackageStorage};
 pub use device::{DeviceInfo, DeviceState};
 pub use error::AdbError;
 pub use logcat::{LogEntry, LogcatStream};

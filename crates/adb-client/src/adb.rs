@@ -1,7 +1,11 @@
 use std::io;
 use std::process::{Command, Output};
+use std::sync::{LazyLock, Mutex};
 
 use crate::error::AdbError;
+
+/// Serializes `adb shell` commands so fast pollers are not starved by long scans.
+static ADB_SHELL_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Entry point for running `adb` commands.
 pub struct Adb;
@@ -42,6 +46,7 @@ pub(crate) fn run_adb(args: &[&str]) -> Result<Output, AdbError> {
 }
 
 pub(crate) fn run_adb_for_serial(serial: &str, args: &[&str]) -> Result<Output, AdbError> {
+    let _guard = ADB_SHELL_LOCK.lock().expect("adb shell lock");
     let mut full_args = Vec::with_capacity(2 + args.len());
     full_args.push("-s");
     full_args.push(serial);

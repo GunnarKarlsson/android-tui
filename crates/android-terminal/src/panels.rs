@@ -1,10 +1,52 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use adb_client::{DiskStats, NetworkStats, ProtocolStats};
 use eframe::egui;
 
 use crate::app::{App, CachedLogLine};
 use crate::theme;
+
+#[derive(Default)]
+pub struct AppStorageState {
+    pub packages: Vec<String>,
+    pub sizes: HashMap<String, u64>,
+    pub scanning: bool,
+    pub error: Option<String>,
+}
+
+impl AppStorageState {
+    pub fn set_packages(&mut self, packages: Vec<String>) {
+        self.packages = packages;
+        self.sizes.clear();
+        self.scanning = true;
+    }
+
+    pub fn merge_packages(&mut self, packages: Vec<String>) {
+        self.packages = packages;
+        self.sizes
+            .retain(|package, _| self.packages.iter().any(|pkg| pkg == package));
+        self.scanning = true;
+    }
+
+    pub fn set_size(&mut self, package: &str, bytes: u64) {
+        self.sizes.insert(package.to_string(), bytes);
+    }
+
+    pub fn sorted_rows(&self) -> Vec<(&str, Option<u64>)> {
+        let mut rows: Vec<(&str, Option<u64>)> = self
+            .packages
+            .iter()
+            .map(|pkg| (pkg.as_str(), self.sizes.get(pkg).copied()))
+            .collect();
+        rows.sort_by(|a, b| match (a.1, b.1) {
+            (Some(left), Some(right)) => right.cmp(&left),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.0.cmp(b.0),
+        });
+        rows
+    }
+}
 
 pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
@@ -20,12 +62,22 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         .on_hover_text("Filter log lines by text");
     });
 
+    if app.selected_serial.is_none() {
+        theme::panel_loading(ui);
+        return;
+    }
+
     if let Some(error) = &app.logcat_error {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
 
-    if app.selected_serial.is_none() || app.log_lines.is_empty() {
+    if app.logcat_rx.is_none() {
         theme::panel_loading(ui);
+        return;
+    }
+
+    if app.log_lines.is_empty() {
+        ui.label("Waiting for log output…");
         return;
     }
 
@@ -58,12 +110,22 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         .on_hover_text("Filter error lines by text");
     });
 
+    if app.selected_serial.is_none() {
+        theme::panel_loading(ui);
+        return;
+    }
+
     if let Some(error) = &app.error_logcat_error {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
 
-    if app.selected_serial.is_none() || app.error_lines.is_empty() {
+    if app.error_logcat_rx.is_none() {
         theme::panel_loading(ui);
+        return;
+    }
+
+    if app.error_lines.is_empty() {
+        ui.label("Waiting for error log output…");
         return;
     }
 
@@ -91,19 +153,27 @@ pub fn memory_disk(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.stats_error {
         ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
     }
-
-    let Some(stats) = &app.system_stats else {
-        theme::panel_loading(ui);
-        return;
-    };
+    if let Some(error) = &app.app_storage.error {
+        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+    }
 
     egui::ScrollArea::vertical()
         .id_salt(egui::Id::new("memory_disk_scroll"))
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            show_memory_stats(ui, &stats.memory);
+            if let Some(stats) = &app.system_stats {
+                show_memory_stats(ui, &stats.memory);
+            } else if app.stats_rx.is_some() {
+                ui.label("Loading memory…");
+            }
             ui.separator();
-            show_disk_stats(ui, &stats.disks);
+            if let Some(stats) = &app.system_stats {
+                show_disk_stats(ui, &stats.disks);
+            } else if app.stats_rx.is_some() {
+                ui.label("Loading disk…");
+            }
+            ui.separator();
+            show_app_storage(ui, &app.app_storage);
         });
 }
 
@@ -118,7 +188,11 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
     }
 
     let Some(stats) = &app.network_stats else {
-        theme::panel_loading(ui);
+        if app.network_rx.is_some() {
+            ui.label("Fetching network stats…");
+        } else {
+            theme::panel_loading(ui);
+        }
         return;
     };
 
@@ -141,7 +215,11 @@ pub fn protocols(ui: &mut egui::Ui, app: &App) {
     }
 
     let Some(stats) = &app.protocol_stats else {
-        theme::panel_loading(ui);
+        if app.protocol_rx.is_some() {
+            ui.label("Fetching app traffic…");
+        } else {
+            theme::panel_loading(ui);
+        }
         return;
     };
 
@@ -233,6 +311,49 @@ fn show_disk_stats(ui: &mut egui::Ui, disks: &[DiskStats]) {
         ));
         ui.add_space(4.0);
     }
+}
+
+fn show_app_storage(ui: &mut egui::Ui, storage: &AppStorageState) {
+    ui.horizontal(|ui| {
+        ui.label("Apps");
+        if storage.scanning {
+            ui.label(format!(
+                "({}/{})",
+                storage.sizes.len(),
+                storage.packages.len()
+            ));
+        }
+    });
+
+    if storage.packages.is_empty() {
+        ui.label("Loading package list…");
+        return;
+    }
+
+    egui::ScrollArea::vertical()
+        .id_salt(egui::Id::new("app_storage_scroll"))
+        .max_height(240.0)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Grid::new("app_storage")
+                .num_columns(2)
+                .spacing([12.0, 4.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("Package");
+                    ui.label("Storage");
+                    ui.end_row();
+
+                    for (package, bytes) in storage.sorted_rows() {
+                        ui.label(package);
+                        ui.label(match bytes {
+                            Some(value) => format_bytes(value),
+                            None => "…".to_string(),
+                        });
+                        ui.end_row();
+                    }
+                });
+        });
 }
 
 fn show_network_table(ui: &mut egui::Ui, stats: &[NetworkRow]) {
