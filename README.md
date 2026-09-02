@@ -6,17 +6,25 @@ A TUI written in Rust for debugging Android devices and emulators on macOS.
 
 Select a device, then watch RAM, storage, logcat, and network in one window. Panels resize by dragging the gaps between them.
 
+Panels:
+
 **Devices** — Connected emulators and USB devices. Click one to drive the rest of the dashboard. The header refresh button re-runs `adb devices`. Offline or unauthorized entries are listed but cannot be selected.
 
-**RAM** — Live memory usage as a donut: percent in the center, used / total below.
+**RAM** — Live memory usage 
 
-**Storage** — Live internal storage as a donut: percent and used / total.
+**Storage** — Live internal storage
 
-**Logcat (All)** — Streaming logcat for the selected device. Substring filter, tag filters (type a tag and press Enter), and an auto-update checkbox to pause the feed. Header icons toggle timestamps and line spacing. Lines are colored by log level.
+**Logcat (All)** — Streaming logcat for the selected device.
 
-**Logcat (Errors)** — Same stream, error-level only, with its own filter and auto-update toggle.
+- Substring filter
+- Tag filters (type a tag and press Enter)
+- Auto-update checkbox to pause the feed
+- Header icons toggle timestamps and line spacing
+- Lines colored by log level
 
-**Storage Details** — Category totals, then a per-package size list scanned in the background and sorted largest-first.
+**Logcat (Errors)** — Logcat but only errors.
+
+**Storage Details** — Category totals and per-app storage.
 
 **Network Activity** — Per-interface RX/TX totals and current down/up rates.
 
