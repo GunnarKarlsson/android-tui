@@ -19,6 +19,8 @@ pub struct App {
     pub selected_serial: Option<String>,
     pub logcat_rx: Option<Receiver<LogEntry>>,
     pub logcat_stream: Option<LogcatStream>,
+    pub error_logcat_rx: Option<Receiver<LogEntry>>,
+    pub error_logcat_stream: Option<LogcatStream>,
     pub stats_rx: Option<Receiver<StatsUpdate>>,
     pub stats_poller: Option<StatsPoller>,
     pub network_rx: Option<Receiver<NetworkUpdate>>,
@@ -30,7 +32,9 @@ pub struct App {
     pub log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
+    pub error_logcat_error: Option<String>,
     pub auto_update_feed: bool,
+    pub error_auto_update_feed: bool,
     pub logcat_filter: String,
     pub error_logcat_filter: String,
 }
@@ -59,6 +63,8 @@ impl App {
             selected_serial: None,
             logcat_rx: None,
             logcat_stream: None,
+            error_logcat_rx: None,
+            error_logcat_stream: None,
             stats_rx: None,
             stats_poller: None,
             network_rx: None,
@@ -70,7 +76,9 @@ impl App {
             log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
             logcat_error: None,
+            error_logcat_error: None,
             auto_update_feed: true,
+            error_auto_update_feed: true,
             logcat_filter: String::new(),
             error_logcat_filter: String::new(),
         }
@@ -128,6 +136,14 @@ impl App {
             Err(err) => self.logcat_error = Some(err.user_message()),
         }
 
+        match LogcatStream::spawn_errors(serial) {
+            Ok((rx, stream)) => {
+                self.error_logcat_rx = Some(rx);
+                self.error_logcat_stream = Some(stream);
+            }
+            Err(err) => self.error_logcat_error = Some(err.user_message()),
+        }
+
         match StatsPoller::spawn(serial) {
             Ok((rx, poller)) => {
                 self.stats_rx = Some(rx);
@@ -149,6 +165,7 @@ impl App {
         self.log_lines.clear();
         self.error_lines.clear();
         self.logcat_error = None;
+        self.error_logcat_error = None;
         self.logcat_filter.clear();
         self.error_logcat_filter.clear();
         self.system_stats = None;
@@ -182,37 +199,39 @@ impl App {
             stream.stop();
         }
         self.logcat_rx = None;
-    }
-
-    fn push_line(&mut self, entry: LogEntry) {
-        let cached = CachedLogLine::from_entry(&entry);
-        if entry.is_error_level() {
-            self.error_lines.push_back(cached.clone());
-            trim_buffer(&mut self.error_lines);
+        if let Some(stream) = self.error_logcat_stream.take() {
+            stream.stop();
         }
-        self.log_lines.push_back(cached);
-        trim_buffer(&mut self.log_lines);
+        self.error_logcat_rx = None;
     }
 
     fn drain_logcat(&mut self) -> bool {
-        let Some(rx) = self.logcat_rx.as_ref() else {
-            return false;
-        };
-
-        if !self.auto_update_feed {
-            while rx.try_recv().is_ok() {}
-            return false;
-        }
-
-        let entries: Vec<LogEntry> = rx.try_iter().take(MAX_DRAIN_PER_FRAME).collect();
+        let entries = take_log_entries(self.logcat_rx.as_ref(), self.auto_update_feed);
         if entries.is_empty() {
             return false;
         }
-
         for entry in entries {
-            self.push_line(entry);
+            self.log_lines.push_back(CachedLogLine::from_entry(&entry));
+            trim_buffer(&mut self.log_lines);
         }
         true
+    }
+
+    fn drain_error_logcat(&mut self) -> bool {
+        let entries = take_log_entries(self.error_logcat_rx.as_ref(), self.error_auto_update_feed);
+        if entries.is_empty() {
+            return false;
+        }
+        let mut updated = false;
+        for entry in entries {
+            if entry.is_error_level() {
+                self.error_lines
+                    .push_back(CachedLogLine::from_entry(&entry));
+                trim_buffer(&mut self.error_lines);
+                updated = true;
+            }
+        }
+        updated
     }
 
     fn drain_stats(&mut self) -> bool {
@@ -262,6 +281,9 @@ impl App {
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
+            needs_repaint = true;
+        }
+        if self.drain_error_logcat() {
             needs_repaint = true;
         }
         if self.drain_stats() {
@@ -330,6 +352,19 @@ impl App {
                 }
             });
     }
+}
+
+fn take_log_entries(rx: Option<&Receiver<LogEntry>>, auto_update: bool) -> Vec<LogEntry> {
+    let Some(rx) = rx else {
+        return Vec::new();
+    };
+
+    if !auto_update {
+        while rx.try_recv().is_ok() {}
+        return Vec::new();
+    }
+
+    rx.try_iter().take(MAX_DRAIN_PER_FRAME).collect()
 }
 
 fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
