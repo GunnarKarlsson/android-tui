@@ -85,11 +85,66 @@ fn panel_padding(ui: &Ui) -> egui::Margin {
 pub mod icons {
     /// Circular arrows — `nf-md-refresh`.
     pub const REFRESH: &str = "\u{f0450}";
+    /// Clock — `nf-md-clock`.
+    pub const CLOCK: &str = "\u{f0954}";
+}
+
+const ICON_BUTTON_PADDING: f32 = 6.0;
+
+fn icon_button_widget(ui: &mut Ui, icon: &str, pressed: bool) -> egui::Response {
+    let galley = egui::WidgetText::from(icon).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Button,
+    );
+    let ink = if galley.mesh_bounds.is_positive() {
+        galley.mesh_bounds
+    } else {
+        galley.rect
+    };
+    let inner = ink.size().x.max(ink.size().y);
+    let button_size = inner + 2.0 * ICON_BUTTON_PADDING;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(button_size, button_size),
+        egui::Sense::click(),
+    );
+
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&response);
+        let fill = if pressed {
+            ui.visuals().selection.bg_fill
+        } else {
+            visuals.weak_bg_fill
+        };
+        ui.painter().rect(
+            rect,
+            visuals.corner_radius,
+            fill,
+            egui::Stroke::NONE,
+            egui::StrokeKind::Inside,
+        );
+        let pos = rect.center() - ink.center().to_vec2();
+        ui.painter().galley(pos, galley, visuals.text_color());
+    }
+
+    if let Some(cursor) = ui.visuals().interact_cursor {
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(cursor);
+        }
+    }
+
+    response
 }
 
 /// Icon-only button.
 pub fn icon_button(ui: &mut Ui, icon: &str) -> egui::Response {
-    ui.button(icon)
+    icon_button_widget(ui, icon, false)
+}
+
+/// Icon button that stays visually pressed while `pressed` is true.
+pub fn icon_toggle(ui: &mut Ui, icon: &str, pressed: bool) -> egui::Response {
+    icon_button_widget(ui, icon, pressed)
 }
 
 /// Space below a toolbar row (filter, etc.), matching panel padding.

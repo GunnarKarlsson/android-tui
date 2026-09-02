@@ -37,6 +37,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         &app.log_lines,
         &matching,
         app.auto_update_feed,
+        app.logcat_show_timestamps,
         egui::Id::new("logcat_all_scroll"),
         LogScrollStyle::ByLevel,
     );
@@ -73,6 +74,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         &app.error_lines,
         &matching,
         app.error_auto_update_feed,
+        app.error_show_timestamps,
         egui::Id::new("logcat_errors_scroll"),
         LogScrollStyle::ErrorsOnly,
     );
@@ -272,7 +274,7 @@ fn filtered_line_indices(lines: &VecDeque<CachedLogLine>, filter: &str) -> Vec<u
     lines
         .iter()
         .enumerate()
-        .filter(|(_, line)| line.text.to_lowercase().contains(&filter_lower))
+        .filter(|(_, line)| line.matches_filter(&filter_lower))
         .map(|(index, _)| index)
         .collect()
 }
@@ -322,6 +324,7 @@ fn show_log_scroll(
     lines: &VecDeque<CachedLogLine>,
     matching: &[usize],
     stick_to_bottom: bool,
+    show_timestamps: bool,
     scroll_id: egui::Id,
     style: LogScrollStyle,
 ) {
@@ -340,7 +343,7 @@ fn show_log_scroll(
                     LogScrollStyle::ErrorsOnly => error_line_color(line.level),
                     LogScrollStyle::ByLevel => log_level_color(line.level),
                 };
-                ui.colored_label(color, &line.text);
+                ui.colored_label(color, line.display(show_timestamps));
             }
         });
 }

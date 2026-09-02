@@ -59,12 +59,44 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         _tile_id: TileId,
         pane: &mut PanelId,
     ) -> UiResponse {
-        theme::panel(ui, pane.title(), |ui| match pane {
-            PanelId::LogcatAll => panels::logcat_all(ui, self.app),
-            PanelId::LogcatErrors => panels::logcat_errors(ui, self.app),
-            PanelId::SystemStats => panels::memory_disk(ui, self.app),
-            PanelId::Network => panels::network(ui, self.app),
-        });
+        match pane {
+            PanelId::LogcatAll => {
+                let mut show_timestamps = self.app.logcat_show_timestamps;
+                theme::panel_with_header_actions(
+                    ui,
+                    pane.title(),
+                    |ui| {
+                        if theme::icon_toggle(ui, theme::icons::CLOCK, show_timestamps).clicked() {
+                            show_timestamps = !show_timestamps;
+                        }
+                    },
+                    |ui| panels::logcat_all(ui, self.app),
+                );
+                self.app.logcat_show_timestamps = show_timestamps;
+            }
+            PanelId::LogcatErrors => {
+                let mut show_timestamps = self.app.error_show_timestamps;
+                theme::panel_with_header_actions(
+                    ui,
+                    pane.title(),
+                    |ui| {
+                        if theme::icon_toggle(ui, theme::icons::CLOCK, show_timestamps).clicked() {
+                            show_timestamps = !show_timestamps;
+                        }
+                    },
+                    |ui| panels::logcat_errors(ui, self.app),
+                );
+                self.app.error_show_timestamps = show_timestamps;
+            }
+            PanelId::SystemStats => {
+                theme::panel(ui, pane.title(), |ui| {
+                    panels::memory_disk(ui, self.app)
+                });
+            }
+            PanelId::Network => {
+                theme::panel(ui, pane.title(), |ui| panels::network(ui, self.app));
+            }
+        }
 
         UiResponse::None
     }

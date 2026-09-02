@@ -12,7 +12,7 @@ use crate::error::AdbError;
 
 static LOGCAT_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]*):\s?(.*)$",
+        r"^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]*): ?(.*)$",
     )
     .expect("valid logcat regex")
 });
@@ -30,10 +30,21 @@ pub struct LogEntry {
 
 impl LogEntry {
     pub fn format_line(&self) -> String {
-        format!(
-            "{} {:>5} {:>5} {} {}: {}",
-            self.timestamp, self.pid, self.tid, self.level, self.tag, self.message
-        )
+        self.format_line_with_timestamp(true)
+    }
+
+    pub fn format_line_with_timestamp(&self, show_timestamp: bool) -> String {
+        let suffix = format!("{} {}: {}", self.level, self.tag, self.message);
+        if show_timestamp {
+            let body = format!("{:>5} {:>5} {}", self.pid, self.tid, suffix);
+            if self.timestamp.is_empty() {
+                body
+            } else {
+                format!("{} {}", self.timestamp, body)
+            }
+        } else {
+            suffix
+        }
     }
 
     /// Returns true for Error (`E`) and Fatal (`F`) log levels.
@@ -297,6 +308,27 @@ mod tests {
         assert_eq!(entry.level, 'W');
         assert_eq!(entry.tag, "Tag");
         assert_eq!(entry.message, "");
+    }
+
+    #[test]
+    fn compact_line_omits_timestamp_pid_and_tid() {
+        let info = parse_logcat_line(
+            "09-02 11:05:45.782  1959  1959 I artd    : GetBestInfo checking vdex next to the dex file (/data/user_de/0/com.google.android.gms/app_chimera/m/000000b4/oat/arm64/dl-Appsearch.optional_261631100400.vdex)",
+        )
+        .unwrap();
+        assert_eq!(
+            info.format_line_with_timestamp(false),
+            "I artd    : GetBestInfo checking vdex next to the dex file (/data/user_de/0/com.google.android.gms/app_chimera/m/000000b4/oat/arm64/dl-Appsearch.optional_261631100400.vdex)",
+        );
+
+        let error = parse_logcat_line(
+            "09-02 11:05:45.782  5353 25353 E AndroidRuntime: \tat kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)",
+        )
+        .unwrap();
+        assert_eq!(
+            error.format_line_with_timestamp(false),
+            "E AndroidRuntime: \tat kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)",
+        );
     }
 
     #[test]

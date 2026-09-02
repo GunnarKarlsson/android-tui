@@ -36,22 +36,38 @@ pub struct App {
     pub error_logcat_error: Option<String>,
     pub auto_update_feed: bool,
     pub error_auto_update_feed: bool,
+    pub logcat_show_timestamps: bool,
+    pub error_show_timestamps: bool,
     pub logcat_filter: String,
     pub error_logcat_filter: String,
 }
 
 #[derive(Clone)]
 pub struct CachedLogLine {
-    pub text: String,
+    full: String,
+    compact: String,
     pub level: char,
 }
 
 impl CachedLogLine {
     pub fn from_entry(entry: &LogEntry) -> Self {
         CachedLogLine {
-            text: entry.format_line(),
+            full: entry.format_line_with_timestamp(true),
+            compact: entry.format_line_with_timestamp(false),
             level: entry.level,
         }
+    }
+
+    pub fn display(&self, show_timestamp: bool) -> &str {
+        if show_timestamp {
+            &self.full
+        } else {
+            &self.compact
+        }
+    }
+
+    pub fn matches_filter(&self, filter_lower: &str) -> bool {
+        self.full.to_lowercase().contains(filter_lower)
     }
 }
 
@@ -80,6 +96,8 @@ impl App {
             error_logcat_error: None,
             auto_update_feed: true,
             error_auto_update_feed: true,
+            logcat_show_timestamps: true,
+            error_show_timestamps: true,
             logcat_filter: String::new(),
             error_logcat_filter: String::new(),
         };
