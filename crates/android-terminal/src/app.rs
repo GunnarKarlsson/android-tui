@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use adb_client::{
-    Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, StatsPoller, StatsUpdate, SystemStats,
+    Adb, DeviceInfo, DeviceState, LogEntry, LogcatStream, NetworkPoller, NetworkUpdate,
+    StatsPoller, StatsUpdate, SystemStats,
 };
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -20,6 +21,8 @@ pub struct App {
     pub logcat_stream: Option<LogcatStream>,
     pub stats_rx: Option<Receiver<StatsUpdate>>,
     pub stats_poller: Option<StatsPoller>,
+    pub network_rx: Option<Receiver<NetworkUpdate>>,
+    pub network_poller: Option<NetworkPoller>,
     pub system_stats: Option<SystemStats>,
     pub stats_error: Option<String>,
     pub network_stats: Option<Vec<panels::NetworkRow>>,
@@ -58,6 +61,8 @@ impl App {
             logcat_stream: None,
             stats_rx: None,
             stats_poller: None,
+            network_rx: None,
+            network_poller: None,
             system_stats: None,
             stats_error: None,
             network_stats: None,
@@ -130,6 +135,14 @@ impl App {
             }
             Err(err) => self.stats_error = Some(err.user_message()),
         }
+
+        match NetworkPoller::spawn(serial) {
+            Ok((rx, poller)) => {
+                self.network_rx = Some(rx);
+                self.network_poller = Some(poller);
+            }
+            Err(err) => self.network_error = Some(err.user_message()),
+        }
     }
 
     fn clear_device_data(&mut self) {
@@ -147,6 +160,14 @@ impl App {
     fn stop_streams(&mut self) {
         self.stop_logcat();
         self.stop_stats();
+        self.stop_network();
+    }
+
+    fn stop_network(&mut self) {
+        if let Some(poller) = self.network_poller.take() {
+            poller.stop();
+        }
+        self.network_rx = None;
     }
 
     fn stop_stats(&mut self) {
@@ -211,12 +232,37 @@ impl App {
         updated
     }
 
+    fn drain_network(&mut self) -> bool {
+        let Some(rx) = self.network_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                NetworkUpdate::Stats(stats) => {
+                    self.network_stats = Some(panels::network_rows_from_stats(&stats));
+                    self.network_error = None;
+                    updated = true;
+                }
+                NetworkUpdate::Error(message) => {
+                    self.network_error = Some(message);
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
     pub fn update_panels(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
             needs_repaint = true;
         }
         if self.drain_stats() {
+            needs_repaint = true;
+        }
+        if self.drain_network() {
             needs_repaint = true;
         }
         if needs_repaint {

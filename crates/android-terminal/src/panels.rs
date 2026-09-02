@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use adb_client::DiskStats;
+use adb_client::{DiskStats, NetworkStats};
 use eframe::egui;
 
 use crate::app::{App, CachedLogLine};
@@ -124,6 +124,11 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
         return;
     };
 
+    if stats.is_empty() {
+        ui.label("No network interfaces reported.");
+        return;
+    }
+
     show_network_table(ui, stats);
 }
 
@@ -205,7 +210,7 @@ fn show_network_table(ui: &mut egui::Ui, stats: &[NetworkRow]) {
         });
 }
 
-/// Placeholder row type until Step 2.5 wires real network stats.
+/// Display row for the network activity table.
 #[derive(Clone)]
 pub struct NetworkRow {
     pub interface: String,
@@ -213,6 +218,49 @@ pub struct NetworkRow {
     pub rx: String,
     pub tx: String,
     pub rate: String,
+}
+
+pub fn network_rows_from_stats(stats: &NetworkStats) -> Vec<NetworkRow> {
+    stats
+        .interfaces
+        .iter()
+        .map(|iface| NetworkRow {
+            interface: iface.interface.clone(),
+            transport: iface.transport.clone(),
+            rx: format_bytes(iface.rx_bytes),
+            tx: format_bytes(iface.tx_bytes),
+            rate: format_rate(iface.rx_rate_bps, iface.tx_rate_bps),
+        })
+        .collect()
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn format_rate(rx_bps: f64, tx_bps: f64) -> String {
+    format!("↓ {}  ↑ {}", format_throughput(rx_bps), format_throughput(tx_bps))
+}
+
+fn format_throughput(bps: f64) -> String {
+    if bps < 0.0 {
+        return "—".to_string();
+    }
+    if bps >= 1_048_576.0 {
+        format!("{:.1} MB/s", bps / 1_048_576.0)
+    } else if bps >= 1024.0 {
+        format!("{:.1} KB/s", bps / 1024.0)
+    } else {
+        format!("{:.0} B/s", bps)
+    }
 }
 
 enum LogScrollStyle {
