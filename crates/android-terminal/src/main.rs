@@ -37,12 +37,6 @@ impl eframe::App for TerminalApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.inner.update_panels(ctx);
 
-        eframe::egui::TopBottomPanel::top("header")
-            .frame(theme::shell_frame(ctx))
-            .show(ctx, |ui| {
-                theme::title_bar(ui, "Android Terminal");
-            });
-
         eframe::egui::SidePanel::left("devices")
             .resizable(true)
             .default_width(260.0)

@@ -113,7 +113,7 @@ fn install_fonts(ctx: &Context) {
     ctx.set_fonts(fonts);
 }
 
-/// Outer frame for SidePanel / CentralPanel / TopBottomPanel.
+/// Outer frame for SidePanel / CentralPanel.
 /// Zero inner margin so [`panel`] is the only source of padding.
 pub fn shell_frame(ctx: &Context) -> egui::Frame {
     egui::Frame::NONE.fill(ctx.style().visuals.panel_fill)
@@ -203,15 +203,6 @@ pub fn filter_row(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
 }
 pub fn panel_loading(ui: &mut Ui) {
     ui.label("Loading...");
-}
-
-/// App title strip: same padding as [`panel`], no body.
-pub fn title_bar(ui: &mut Ui, title: impl Into<egui::RichText>) {
-    egui::Frame::NONE
-        .inner_margin(panel_padding(ui))
-        .show(ui, |ui| {
-            ui.heading(title);
-        });
 }
 
 /// One chrome for every panel: uniform padding on all four sides, title, then body.

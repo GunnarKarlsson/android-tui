@@ -149,8 +149,40 @@ pub fn protocols(ui: &mut egui::Ui, app: &App) {
 }
 
 fn show_protocol_stats(ui: &mut egui::Ui, stats: &ProtocolStats) {
-    ui.label(format!("TCP {}", format_bytes(stats.tcp_bytes)));
-    ui.label(format!("UDP {}", format_bytes(stats.udp_bytes)));
+    if stats.apps.is_empty() {
+        ui.label("No app traffic reported.");
+        return;
+    }
+
+    egui::ScrollArea::both()
+        .id_salt(egui::Id::new("app_traffic_scroll"))
+        .auto_shrink([false, false])
+        .max_height(ui.available_height())
+        .show(ui, |ui| {
+            egui::Grid::new("app_traffic")
+                .num_columns(6)
+                .spacing([12.0, 4.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("Package");
+                    ui.label("Total");
+                    ui.label("Foreground");
+                    ui.label("Background");
+                    ui.label("WiFi");
+                    ui.label("Mobile");
+                    ui.end_row();
+
+                    for app in &stats.apps {
+                        ui.label(app.packages.join(", "));
+                        ui.label(format_bytes(app.total_bytes));
+                        ui.label(format_bytes(app.foreground_bytes));
+                        ui.label(format_bytes(app.background_bytes));
+                        ui.label(format_bytes(app.wifi_bytes));
+                        ui.label(format_bytes(app.mobile_bytes));
+                        ui.end_row();
+                    }
+                });
+        });
 }
 
 fn show_memory_stats(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {
@@ -244,9 +276,10 @@ pub struct NetworkRow {
 }
 
 pub fn network_rows_from_stats(stats: &NetworkStats) -> Vec<NetworkRow> {
-    stats
-        .interfaces
-        .iter()
+    let mut interfaces: Vec<_> = stats.interfaces.iter().collect();
+    interfaces.sort_by(|a, b| b.tx_bytes.cmp(&a.tx_bytes));
+    interfaces
+        .into_iter()
         .map(|iface| NetworkRow {
             interface: iface.interface.clone(),
             transport: iface.transport.clone(),

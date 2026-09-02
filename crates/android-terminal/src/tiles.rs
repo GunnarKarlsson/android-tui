@@ -21,7 +21,7 @@ impl PanelId {
             PanelId::LogcatErrors => "Logcat (Errors)",
             PanelId::SystemStats => "Memory / Disk",
             PanelId::Network => "Network Activity",
-            PanelId::Protocols => "Protocols",
+            PanelId::Protocols => "App Traffic",
         }
     }
 }

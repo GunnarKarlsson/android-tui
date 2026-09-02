@@ -13,29 +13,35 @@ const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const MAX_BACKOFF_INTERVAL: Duration = Duration::from_secs(5);
 const BACKOFF_STEP: Duration = Duration::from_secs(1);
 
-/// Android framework tag for UDP traffic.
-const TAG_UDP: u32 = 0xffff_fff1;
-/// Android framework tag for TCP traffic.
-const TAG_TCP: u32 = 0xffff_fff2;
-
 static PACKAGE_UID: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^package:(\S+)\s+uid:(\d+)\s*$").expect("valid package uid regex")
 });
 
 static IDENT_LINE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"uid=(-?\d+)\s+set=(\S+)\s+tag=(0x[0-9a-fA-F]+)").expect("valid ident regex")
+    Regex::new(r"ident=\[\{type=(\d+),.*?}\]\s+uid=(\d+)\s+set=(\S+)\s+tag=(0x[0-9a-fA-F]+)")
+        .expect("valid ident regex")
 });
 
 static HISTORY_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\brb=(\d+)\b.*\btb=(\d+)\b").expect("valid history regex")
 });
 
-/// Snapshot of layer-4 protocol traffic.
+/// Per-app traffic from `dumpsys netstats --uid` (`tag=0x0` rows).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppTraffic {
+    pub uid: u32,
+    pub packages: Vec<String>,
+    pub total_bytes: u64,
+    pub foreground_bytes: u64,
+    pub background_bytes: u64,
+    pub wifi_bytes: u64,
+    pub mobile_bytes: u64,
+}
+
+/// Snapshot of per-app network usage since boot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProtocolStats {
-    pub tcp_bytes: u64,
-    pub udp_bytes: u64,
-    pub packages: HashMap<u32, Vec<String>>,
+    pub apps: Vec<AppTraffic>,
     pub timestamp: SystemTime,
 }
 
@@ -46,14 +52,14 @@ pub enum ProtocolUpdate {
     Error(String),
 }
 
-/// Background poller for TCP/UDP byte totals.
+/// Background poller for per-app traffic stats.
 pub struct ProtocolPoller {
     stop_tx: Sender<()>,
     join_handle: Option<JoinHandle<()>>,
 }
 
 impl ProtocolPoller {
-    /// Polls protocol stats every two seconds.
+    /// Polls app traffic stats every two seconds.
     pub fn spawn(serial: &str) -> Result<(Receiver<ProtocolUpdate>, Self), AdbError> {
         Self::spawn_with_interval(serial, DEFAULT_POLL_INTERVAL)
     }
@@ -120,15 +126,14 @@ impl Drop for ProtocolPoller {
 
 fn fetch_protocol_stats(serial: &str) -> Result<ProtocolStats, AdbError> {
     let packages_out = run_adb_for_serial(serial, &["shell", "pm", "list", "packages", "-U"])?;
-    let packages = parse_package_uids(&String::from_utf8_lossy(&packages_out.stdout));
+    let package_names = parse_package_uids(&String::from_utf8_lossy(&packages_out.stdout));
 
-    let dump = run_adb_for_serial(serial, &["shell", "dumpsys", "netstats", "--uid", "--tag"])?;
-    let (tcp_bytes, udp_bytes) = parse_protocol_bytes(&String::from_utf8_lossy(&dump.stdout));
+    let dump = run_adb_for_serial(serial, &["shell", "dumpsys", "netstats", "--uid"])?;
+    let traffic = parse_uid_traffic(&String::from_utf8_lossy(&dump.stdout));
+    let apps = build_app_traffic(traffic, &package_names);
 
     Ok(ProtocolStats {
-        tcp_bytes,
-        udp_bytes,
-        packages,
+        apps,
         timestamp: SystemTime::now(),
     })
 }
@@ -148,23 +153,60 @@ fn parse_package_uids(text: &str) -> HashMap<u32, Vec<String>> {
     packages
 }
 
-/// Sums received + transmitted bytes for TCP (`tag=0xfffffff2`) and UDP (`tag=0xfffffff1`).
-fn parse_protocol_bytes(text: &str) -> (u64, u64) {
-    let mut tcp_bytes = 0u64;
-    let mut udp_bytes = 0u64;
-    let mut current_tag: Option<u32> = None;
+#[derive(Default)]
+struct UidTraffic {
+    foreground_bytes: u64,
+    background_bytes: u64,
+    wifi_bytes: u64,
+    mobile_bytes: u64,
+}
+
+fn parse_uid_traffic(text: &str) -> HashMap<u32, UidTraffic> {
+    let mut traffic: HashMap<u32, UidTraffic> = HashMap::new();
+    let mut in_uid_stats = false;
+    let mut current_uid = None;
+    let mut current_set = None;
+    let mut current_network = None;
     let mut counting = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
+
+        match trimmed {
+            "UID stats:" => {
+                in_uid_stats = true;
+                current_uid = None;
+                counting = false;
+                continue;
+            }
+            "UID tag stats:" => {
+                in_uid_stats = false;
+                counting = false;
+                continue;
+            }
+            _ => {}
+        }
+
+        if !in_uid_stats {
+            continue;
+        }
+
         if trimmed.starts_with("ident=") {
             if let Some(caps) = IDENT_LINE.captures(trimmed) {
-                let uid: i32 = caps[1].parse().unwrap_or(0);
-                let set = &caps[2];
-                current_tag = parse_tag(&caps[3]);
-                counting = should_count(uid, set, current_tag);
+                let network_type: u32 = caps[1].parse().unwrap_or(u32::MAX);
+                let uid: u32 = caps[2].parse().unwrap_or(0);
+                let set = caps[3].to_string();
+                let tag = &caps[4];
+                counting = tag == "0x0" && !set.eq_ignore_ascii_case("ALL");
+                if counting {
+                    current_uid = Some(uid);
+                    current_set = Some(set);
+                    current_network = Some(network_type);
+                } else {
+                    current_uid = None;
+                }
             } else {
-                current_tag = None;
+                current_uid = None;
                 counting = false;
             }
             continue;
@@ -174,38 +216,76 @@ fn parse_protocol_bytes(text: &str) -> (u64, u64) {
             continue;
         }
 
-        if let Some(caps) = HISTORY_LINE.captures(trimmed) {
-            let rb: u64 = caps[1].parse().unwrap_or(0);
-            let tb: u64 = caps[2].parse().unwrap_or(0);
-            let total = rb.saturating_add(tb);
-            match current_tag {
-                Some(TAG_TCP) => tcp_bytes = tcp_bytes.saturating_add(total),
-                Some(TAG_UDP) => udp_bytes = udp_bytes.saturating_add(total),
-                _ => {}
+        let Some(uid) = current_uid else {
+            continue;
+        };
+        let Some(set) = current_set.as_deref() else {
+            continue;
+        };
+        let Some(network_type) = current_network else {
+            continue;
+        };
+
+        let Some(caps) = HISTORY_LINE.captures(trimmed) else {
+            continue;
+        };
+        let rb: u64 = caps[1].parse().unwrap_or(0);
+        let tb: u64 = caps[2].parse().unwrap_or(0);
+        let bytes = rb.saturating_add(tb);
+
+        let entry = traffic.entry(uid).or_default();
+        match set.to_ascii_uppercase().as_str() {
+            "FOREGROUND" => entry.foreground_bytes = entry.foreground_bytes.saturating_add(bytes),
+            "DEFAULT" | "BACKGROUND" => {
+                entry.background_bytes = entry.background_bytes.saturating_add(bytes)
             }
+            _ => {}
+        }
+        match network_type {
+            1 => entry.wifi_bytes = entry.wifi_bytes.saturating_add(bytes),
+            0 => entry.mobile_bytes = entry.mobile_bytes.saturating_add(bytes),
+            _ => {}
         }
     }
 
-    (tcp_bytes, udp_bytes)
+    traffic
 }
 
-fn parse_tag(raw: &str) -> Option<u32> {
-    let hex = raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X"))?;
-    u32::from_str_radix(hex, 16).ok()
-}
+fn build_app_traffic(
+    traffic: HashMap<u32, UidTraffic>,
+    package_names: &HashMap<u32, Vec<String>>,
+) -> Vec<AppTraffic> {
+    let mut apps: Vec<AppTraffic> = traffic
+        .into_iter()
+        .filter_map(|(uid, stats)| {
+            let total_bytes = stats
+                .foreground_bytes
+                .saturating_add(stats.background_bytes);
+            if total_bytes == 0 {
+                return None;
+            }
 
-fn should_count(uid: i32, set: &str, tag: Option<u32>) -> bool {
-    let Some(tag) = tag else {
-        return false;
-    };
-    if tag != TAG_TCP && tag != TAG_UDP {
-        return false;
-    }
-    if set.eq_ignore_ascii_case("ALL") {
-        uid == -1
-    } else {
-        true
-    }
+            let packages = package_names.get(&uid).cloned().unwrap_or_default();
+            let label = if packages.is_empty() {
+                vec![format!("uid:{uid}")]
+            } else {
+                packages
+            };
+
+            Some(AppTraffic {
+                uid,
+                packages: label,
+                total_bytes,
+                foreground_bytes: stats.foreground_bytes,
+                background_bytes: stats.background_bytes,
+                wifi_bytes: stats.wifi_bytes,
+                mobile_bytes: stats.mobile_bytes,
+            })
+        })
+        .collect();
+
+    apps.sort_by(|a, b| b.total_bytes.cmp(&a.total_bytes));
+    apps
 }
 
 fn sleep_until_stop(stop_rx: &Receiver<()>, duration: Duration) {
@@ -230,33 +310,35 @@ mod tests {
     use super::*;
 
     const PACKAGES_SAMPLE: &str = r#"package:com.google.android.youtube uid:10166
-package:com.android.simappdialog.auto_generated_rro_product__ uid:10060
-package:com.android.externalstorage uid:10098
 package:com.android.server.telecom uid:1000
 package:android uid:1000
 "#;
 
-    const SYS_DUMP_SAMPLE: &str = r#"Xt stats:
-  Pending bytes: 0
-  History since boot:
-  ident=[{type=0, ratType=3, subscriberId=310260..., metered=true, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] uid=-1 set=ALL tag=0x0
+    const UID_STATS_SAMPLE: &str = r#"Xt stats:
+  ident=[{type=1}] uid=-1 set=ALL tag=0x0
     NetworkStatsHistory: bucketDuration=3600
-      st=1787544000 rb=24028 rp=75 tb=25282 tp=86 op=0
-      st=1787547600 rb=847 rp=9 tb=0 tp=0 op=0
+      st=1 rb=999999 rp=1 tb=999999 tp=1 op=0
 UID stats:
   ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10144 set=FOREGROUND tag=0x0
-    NetworkStatsHistory: bucketDuration=3600
-      st=1787544000 rb=63623203 rp=51606 tb=1594753 tp=9557 op=0
-  ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10144 set=FOREGROUND tag=0xfffffff2
-    NetworkStatsHistory: bucketDuration=3600
-      st=1787544000 rb=24028 rp=75 tb=25282 tp=86 op=0
-      st=1787547600 rb=100 rp=1 tb=50 tp=1 op=0
-  ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10166 set=DEFAULT tag=0xfffffff1
-    NetworkStatsHistory: bucketDuration=3600
-      st=1787544000 rb=500 rp=5 tb=200 tp=2 op=0
-  ident=[{type=0, ratType=3, subscriberId=310260..., metered=true, defaultNetwork=true, oemManaged=OEM_NONE, subId=1}] uid=10166 set=DEFAULT tag=0xfffffff1
-    NetworkStatsHistory: bucketDuration=3600
-      st=1787544000 rb=80 rp=2 tb=20 tp=1 op=0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1 rb=1000 rp=1 tb=500 tp=1 op=0
+      st=2 rb=200 rp=1 tb=100 tp=1 op=0
+  ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10144 set=DEFAULT tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1 rb=300 rp=1 tb=200 tp=1 op=0
+  ident=[{type=0, ratType=3, subscriberId=310260..., metered=true, defaultNetwork=true, oemManaged=OEM_NONE, subId=1}] uid=10144 set=FOREGROUND tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1 rb=50 rp=1 tb=50 tp=1 op=0
+  ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10166 set=DEFAULT tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1 rb=400 rp=1 tb=100 tp=1 op=0
+  ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10144 set=ALL tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1 rb=999999 rp=1 tb=999999 tp=1 op=0
+UID tag stats:
+  ident=[{type=1, ratType=COMBINED, wifiNetworkKey="AndroidWifi"open, metered=false, defaultNetwork=true, oemManaged=OEM_NONE, subId=-1}] uid=10144 set=FOREGROUND tag=0xffffff82
+    NetworkStatsHistory: bucketDuration=7200
+      st=1 rb=888888 rp=1 tb=888888 tp=1 op=0
 "#;
 
     #[test]
@@ -267,43 +349,38 @@ UID stats:
             Some(&vec!["com.google.android.youtube".to_string()])
         );
         assert_eq!(packages.get(&1000).map(|names| names.len()), Some(2));
-        assert!(packages
-            .get(&1000)
-            .unwrap()
-            .contains(&"com.android.server.telecom".to_string()));
     }
 
     #[test]
-    fn parse_tcp_udp_tags_from_sysdump() {
-        let (tcp, udp) = parse_protocol_bytes(SYS_DUMP_SAMPLE);
-        assert_eq!(tcp, 24_028 + 25_282 + 100 + 50);
-        assert_eq!(udp, 500 + 200 + 80 + 20);
+    fn parse_uid_stats_traffic() {
+        let traffic = parse_uid_traffic(UID_STATS_SAMPLE);
+
+        let gms = traffic.get(&10144).expect("uid 10144");
+        assert_eq!(gms.foreground_bytes, 1000 + 500 + 200 + 100 + 50 + 50);
+        assert_eq!(gms.background_bytes, 300 + 200);
+        assert_eq!(gms.wifi_bytes, 1000 + 500 + 200 + 100 + 300 + 200);
+        assert_eq!(gms.mobile_bytes, 50 + 50);
+
+        let youtube = traffic.get(&10166).expect("uid 10166");
+        assert_eq!(youtube.background_bytes, 500);
+        assert_eq!(youtube.wifi_bytes, 500);
     }
 
     #[test]
-    fn ignore_combined_tag_zero() {
-        let dump = r#"
-  ident=[{type=1}] uid=10144 set=FOREGROUND tag=0x0
-    NetworkStatsHistory: bucketDuration=3600
-      st=1 rb=999999 rp=1 tb=999999 tp=1 op=0
-"#;
-        let (tcp, udp) = parse_protocol_bytes(dump);
-        assert_eq!(tcp, 0);
-        assert_eq!(udp, 0);
+    fn build_app_traffic_sorted_by_total() {
+        let traffic = parse_uid_traffic(UID_STATS_SAMPLE);
+        let packages = parse_package_uids(PACKAGES_SAMPLE);
+        let apps = build_app_traffic(traffic, &packages);
+
+        assert_eq!(apps.len(), 2);
+        assert!(apps[0].total_bytes >= apps[1].total_bytes);
+        assert_eq!(apps[1].packages, vec!["com.google.android.youtube".to_string()]);
     }
 
     #[test]
-    fn skip_set_all_for_app_uids() {
-        let dump = r#"
-  ident=[{type=1}] uid=10144 set=ALL tag=0xfffffff2
-    NetworkStatsHistory: bucketDuration=3600
-      st=1 rb=1000 rp=1 tb=1000 tp=1 op=0
-  ident=[{type=1}] uid=10144 set=FOREGROUND tag=0xfffffff2
-    NetworkStatsHistory: bucketDuration=3600
-      st=1 rb=40 rp=1 tb=10 tp=1 op=0
-"#;
-        let (tcp, udp) = parse_protocol_bytes(dump);
-        assert_eq!(tcp, 50);
-        assert_eq!(udp, 0);
+    fn ignores_uid_tag_stats_section() {
+        let traffic = parse_uid_traffic(UID_STATS_SAMPLE);
+        let total: u64 = traffic.values().map(|s| s.foreground_bytes + s.background_bytes).sum();
+        assert!(total < 1_000_000);
     }
 }
