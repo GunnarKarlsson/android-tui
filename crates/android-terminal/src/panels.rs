@@ -10,7 +10,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
         ui.checkbox(&mut app.auto_update_feed, "Auto-update feed");
     });
-    ui.horizontal(|ui| {
+    theme::filter_row(ui, |ui| {
         ui.label("Filter:");
         ui.add(
             egui::TextEdit::singleline(&mut app.logcat_filter)
@@ -46,7 +46,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
         ui.checkbox(&mut app.error_auto_update_feed, "Auto-update feed");
     });
-    ui.horizontal(|ui| {
+    theme::filter_row(ui, |ui| {
         ui.label("Filter:");
         ui.add(
             egui::TextEdit::singleline(&mut app.error_logcat_filter)

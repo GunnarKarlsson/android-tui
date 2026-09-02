@@ -92,7 +92,16 @@ pub fn icon_button(ui: &mut Ui, icon: &str) -> egui::Response {
     ui.button(icon)
 }
 
-/// Shown in every panel until it has data to display.
+/// Space below a toolbar row (filter, etc.), matching panel padding.
+pub fn section_gap(ui: &mut Ui) {
+    ui.add_space(panel_padding(ui).bottom as f32);
+}
+
+/// Filter row with themed spacing underneath.
+pub fn filter_row(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
+    ui.horizontal(add_contents);
+    section_gap(ui);
+}
 pub fn panel_loading(ui: &mut Ui) {
     ui.label("Loading...");
 }
