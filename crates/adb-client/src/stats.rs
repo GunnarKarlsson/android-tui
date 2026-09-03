@@ -75,10 +75,7 @@ impl StatsPoller {
                 match fetch_system_stats(&serial) {
                     Ok(stats) => {
                         poll_interval = interval;
-                        if stats_tx
-                            .send(StatsUpdate::Stats(stats))
-                            .is_err()
-                        {
+                        if stats_tx.send(StatsUpdate::Stats(stats)).is_err() {
                             break;
                         }
                     }

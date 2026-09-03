@@ -2,14 +2,10 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{
-    self, Context, FontData, FontDefinitions, FontFamily, FontId, TextStyle, Ui,
-};
+use eframe::egui::{self, Context, FontData, FontDefinitions, FontFamily, FontId, TextStyle, Ui};
 
-const JETBRAINS_MONO: &[u8] =
-    include_bytes!("../assets/fonts/JetBrainsMonoNerdFont-Regular.ttf");
-const JETBRAINS_MONO_BOLD: &[u8] =
-    include_bytes!("../assets/fonts/JetBrainsMonoNerdFont-Bold.ttf");
+const JETBRAINS_MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNerdFont-Regular.ttf");
+const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNerdFont-Bold.ttf");
 
 /// All UI colors are defined here once.
 pub mod colors {
@@ -50,21 +46,47 @@ pub mod colors {
 
     /// Memory / Disk panel body text.
     pub const MEMORY_DISK_BODY: Color32 = Color32::from_rgb(180, 230, 80);
-    /// Network Activity panel body text.
-    pub const NETWORK_BODY: Color32 = Color32::from_rgb(0, 180, 240);
+    /// RX series and ↓ rate.
+    pub const SPARK_RX: Color32 = Color32::from_rgb(0, 180, 240);
+    /// TX series and ↑ rate.
+    pub const SPARK_TX: Color32 = Color32::from_rgb(220, 80, 180);
     /// App Traffic panel body text.
     pub const APP_TRAFFIC_BODY: Color32 = Color32::from_rgb(200, 170, 255);
 
     /// Background and foreground pairs for logcat tag highlight badges.
     pub const TAG_HIGHLIGHTS: &[(Color32, Color32)] = &[
-        (Color32::from_rgb(58, 68, 82), Color32::from_rgb(210, 218, 228)),
-        (Color32::from_rgb(52, 72, 68), Color32::from_rgb(196, 220, 210)),
-        (Color32::from_rgb(72, 58, 68), Color32::from_rgb(220, 200, 214)),
-        (Color32::from_rgb(58, 62, 78), Color32::from_rgb(200, 206, 228)),
-        (Color32::from_rgb(68, 64, 52), Color32::from_rgb(220, 214, 196)),
-        (Color32::from_rgb(52, 66, 72), Color32::from_rgb(196, 214, 222)),
-        (Color32::from_rgb(70, 58, 58), Color32::from_rgb(228, 204, 204)),
-        (Color32::from_rgb(60, 70, 60), Color32::from_rgb(208, 220, 206)),
+        (
+            Color32::from_rgb(58, 68, 82),
+            Color32::from_rgb(210, 218, 228),
+        ),
+        (
+            Color32::from_rgb(52, 72, 68),
+            Color32::from_rgb(196, 220, 210),
+        ),
+        (
+            Color32::from_rgb(72, 58, 68),
+            Color32::from_rgb(220, 200, 214),
+        ),
+        (
+            Color32::from_rgb(58, 62, 78),
+            Color32::from_rgb(200, 206, 228),
+        ),
+        (
+            Color32::from_rgb(68, 64, 52),
+            Color32::from_rgb(220, 214, 196),
+        ),
+        (
+            Color32::from_rgb(52, 66, 72),
+            Color32::from_rgb(196, 214, 222),
+        ),
+        (
+            Color32::from_rgb(70, 58, 58),
+            Color32::from_rgb(228, 204, 204),
+        ),
+        (
+            Color32::from_rgb(60, 70, 60),
+            Color32::from_rgb(208, 220, 206),
+        ),
     ];
 }
 
@@ -94,21 +116,24 @@ fn apply_shared_style(style: &mut egui::Style) {
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
 
     let bold = FontFamily::Name("jetbrains_mono_bold".into());
-    style
-        .text_styles
-        .insert(TextStyle::Small, FontId::new(10.0, FontFamily::Proportional));
+    style.text_styles.insert(
+        TextStyle::Small,
+        FontId::new(10.0, FontFamily::Proportional),
+    );
     style
         .text_styles
         .insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
-    style
-        .text_styles
-        .insert(TextStyle::Button, FontId::new(14.0, FontFamily::Proportional));
+    style.text_styles.insert(
+        TextStyle::Button,
+        FontId::new(14.0, FontFamily::Proportional),
+    );
     style
         .text_styles
         .insert(TextStyle::Heading, FontId::new(20.0, bold));
-    style
-        .text_styles
-        .insert(TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace));
+    style.text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(13.0, FontFamily::Monospace),
+    );
 }
 
 /// Show an error label using the theme error color.
@@ -129,7 +154,10 @@ pub fn panel_body<R>(ui: &mut Ui, color: egui::Color32, add_body: impl FnOnce(&m
 
 fn panel_separator(ui: &mut Ui) {
     let spacing = ui.spacing().item_spacing.y;
-    let (rect, response) = ui.allocate_at_least(egui::vec2(ui.available_width(), spacing), egui::Sense::hover());
+    let (rect, response) = ui.allocate_at_least(
+        egui::vec2(ui.available_width(), spacing),
+        egui::Sense::hover(),
+    );
     if ui.is_rect_visible(rect) {
         ui.painter().hline(
             rect.x_range(),
@@ -253,10 +281,8 @@ fn icon_button_widget(ui: &mut Ui, icon: &str, pressed: bool) -> egui::Response 
     };
     let inner = ink.size().x.max(ink.size().y);
     let button_size = inner + 2.0 * ICON_BUTTON_PADDING;
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(button_size, button_size),
-        egui::Sense::click(),
-    );
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(button_size, button_size), egui::Sense::click());
 
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact(&response);
@@ -326,7 +352,11 @@ pub fn tag_filter_badge(ui: &mut Ui, label: &str, bg: egui::Color32, fg: egui::C
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(egui::RichText::new(label).color(fg).monospace());
-                if ui.small_button("×").on_hover_text("Remove tag filter").clicked() {
+                if ui
+                    .small_button("×")
+                    .on_hover_text("Remove tag filter")
+                    .clicked()
+                {
                     remove = true;
                 }
             });
@@ -335,7 +365,11 @@ pub fn tag_filter_badge(ui: &mut Ui, label: &str, bg: egui::Color32, fg: egui::C
 }
 
 /// Row of active tag-filter badges. `on_remove` is called with the badge index.
-pub fn tag_filter_row(ui: &mut Ui, tags: &[crate::app::LogcatTagFilter], on_remove: &mut Option<usize>) {
+pub fn tag_filter_row(
+    ui: &mut Ui,
+    tags: &[crate::app::LogcatTagFilter],
+    on_remove: &mut Option<usize>,
+) {
     if tags.is_empty() {
         return;
     }
@@ -343,7 +377,8 @@ pub fn tag_filter_row(ui: &mut Ui, tags: &[crate::app::LogcatTagFilter], on_remo
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
         for (index, filter) in tags.iter().enumerate() {
-            let (bg, fg) = colors::TAG_HIGHLIGHTS[filter.color_index % colors::TAG_HIGHLIGHTS.len()];
+            let (bg, fg) =
+                colors::TAG_HIGHLIGHTS[filter.color_index % colors::TAG_HIGHLIGHTS.len()];
             let label = format!("tag:{}", filter.tag);
             if tag_filter_badge(ui, &label, bg, fg) {
                 *on_remove = Some(index);

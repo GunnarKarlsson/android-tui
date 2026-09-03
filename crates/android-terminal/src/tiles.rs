@@ -12,6 +12,7 @@ pub enum PanelId {
     Storage,
     LogcatAll,
     LogcatErrors,
+    Insight,
     SystemStats,
     Network,
     Protocols,
@@ -25,6 +26,7 @@ impl PanelId {
             PanelId::Storage => "Storage",
             PanelId::LogcatAll => "Logcat (All)",
             PanelId::LogcatErrors => "Logcat (Errors)",
+            PanelId::Insight => "Insight",
             PanelId::SystemStats => "Storage Details",
             PanelId::Network => "Network Activity",
             PanelId::Protocols => "App Traffic",
@@ -45,16 +47,21 @@ pub fn create_default_tree() -> Tree<PanelId> {
     let middle_column = tiles.insert_vertical_tile(vec![logcat_all, system_stats]);
 
     let logcat_errors = tiles.insert_pane(PanelId::LogcatErrors);
+    let insight = tiles.insert_pane(PanelId::Insight);
     let network = tiles.insert_pane(PanelId::Network);
     let protocols = tiles.insert_pane(PanelId::Protocols);
-    let right_column = tiles.insert_vertical_tile(vec![logcat_errors, network, protocols]);
+    let right_column = tiles.insert_vertical_tile(vec![logcat_errors, insight, network, protocols]);
 
     let root = tiles.insert_horizontal_tile(vec![left_column, middle_column, right_column]);
 
     set_linear_shares(
         &mut tiles,
         root,
-        &[(left_column, 1.0), (middle_column, 2.5), (right_column, 2.5)],
+        &[
+            (left_column, 1.0),
+            (middle_column, 2.5),
+            (right_column, 2.5),
+        ],
     );
     set_linear_shares(
         &mut tiles,
@@ -69,7 +76,12 @@ pub fn create_default_tree() -> Tree<PanelId> {
     set_linear_shares(
         &mut tiles,
         right_column,
-        &[(logcat_errors, 2.0), (network, 1.0), (protocols, 1.0)],
+        &[
+            (logcat_errors, 2.0),
+            (insight, 1.5),
+            (network, 1.0),
+            (protocols, 1.0),
+        ],
     );
 
     Tree::new("android_terminal_tiles", root, tiles)
@@ -118,12 +130,7 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
         }
     }
 
-    fn pane_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        _tile_id: TileId,
-        pane: &mut PanelId,
-    ) -> UiResponse {
+    fn pane_ui(&mut self, ui: &mut egui::Ui, _tile_id: TileId, pane: &mut PanelId) -> UiResponse {
         match pane {
             PanelId::Devices => {
                 self.app.show_devices(ui);
@@ -148,6 +155,20 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 self.app.logcat_show_timestamps = show_timestamps;
                 self.app.logcat_line_spacing = line_spacing;
             }
+            PanelId::Insight => {
+                let mut analyze = false;
+                theme::panel_with_header_actions(
+                    ui,
+                    pane.title(),
+                    |ui| {
+                        analyze = panels::insight_header(ui, self.app);
+                    },
+                    |ui| panels::insight(ui, self.app),
+                );
+                if analyze {
+                    self.app.request_insight();
+                }
+            }
             PanelId::LogcatErrors => {
                 let mut show_timestamps = self.app.error_show_timestamps;
                 let mut line_spacing = self.app.error_line_spacing;
@@ -163,12 +184,15 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 self.app.error_line_spacing = line_spacing;
             }
             PanelId::SystemStats => {
-                theme::panel(ui, pane.title(), |ui| {
-                    panels::storage_usage(ui, self.app)
-                });
+                theme::panel(ui, pane.title(), |ui| panels::storage_usage(ui, self.app));
             }
             PanelId::Network => {
-                theme::panel(ui, pane.title(), |ui| panels::network(ui, self.app));
+                theme::panel_with_header_actions(
+                    ui,
+                    pane.title(),
+                    |ui| panels::network_header(ui, self.app),
+                    |ui| panels::network(ui, self.app),
+                );
             }
             PanelId::Protocols => {
                 theme::panel(ui, pane.title(), |ui| panels::protocols(ui, self.app));

@@ -187,7 +187,10 @@ fn fetch_storage_breakdown(serial: &str) -> Result<StorageBreakdown, AdbError> {
     let mut du_args = vec!["shell".to_string(), "du".to_string(), "-sb".to_string()];
     du_args.extend(folder_paths.iter().cloned());
 
-    let du = run_adb_for_serial(serial, &du_args.iter().map(String::as_str).collect::<Vec<_>>())?;
+    let du = run_adb_for_serial(
+        serial,
+        &du_args.iter().map(String::as_str).collect::<Vec<_>>(),
+    )?;
     let folder_sizes = parse_du_bytes(&String::from_utf8_lossy(&du.stdout));
     let categories = aggregate_categories(&folder_sizes);
 
@@ -222,10 +225,7 @@ fn parse_user_storage_df(text: &str) -> Result<StorageOverview, AdbError> {
         let available_kb: u64 = parts[3]
             .parse()
             .map_err(|_| AdbError::ParseFailed(format!("invalid df avail: {}", parts[3])))?;
-        let use_percent = parts[4]
-            .trim_end_matches('%')
-            .parse()
-            .unwrap_or(0);
+        let use_percent = parts[4].trim_end_matches('%').parse().unwrap_or(0);
 
         return Ok(StorageOverview {
             total_bytes: total_kb.saturating_mul(1024),
@@ -235,9 +235,7 @@ fn parse_user_storage_df(text: &str) -> Result<StorageOverview, AdbError> {
         });
     }
 
-    Err(AdbError::ParseFailed(
-        "missing user storage df line".into(),
-    ))
+    Err(AdbError::ParseFailed("missing user storage df line".into()))
 }
 
 fn parse_du_bytes(text: &str) -> HashMap<String, u64> {
@@ -318,14 +316,8 @@ mod tests {
 "#;
 
         let sizes = parse_du_bytes(sample);
-        assert_eq!(
-            sizes.get("/storage/emulated/0/Download"),
-            Some(&7222)
-        );
-        assert_eq!(
-            sizes.get("/storage/emulated/0/Pictures"),
-            Some(&83987)
-        );
+        assert_eq!(sizes.get("/storage/emulated/0/Download"), Some(&7222));
+        assert_eq!(sizes.get("/storage/emulated/0/Pictures"), Some(&83987));
     }
 
     #[test]

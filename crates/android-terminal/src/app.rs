@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use adb_client::{
     Adb, AppStoragePoller, AppStorageUpdate, DeviceInfo, DeviceState, LogEntry, LogcatStream,
-    MemoryStats, NetworkPoller, NetworkUpdate, ProtocolPoller, ProtocolStats, ProtocolUpdate,
-    RamPoller, RamUpdate, StorageBreakdown, StorageBreakdownPoller, StorageBreakdownUpdate,
-    StorageGaugePoller, StorageGaugeUpdate, StorageOverview,
+    MemoryStats, NetworkPoller, NetworkStats, NetworkUpdate, ProtocolPoller, ProtocolStats,
+    ProtocolUpdate, RamPoller, RamUpdate, StorageBreakdown, StorageBreakdownPoller,
+    StorageBreakdownUpdate, StorageGaugePoller, StorageGaugeUpdate, StorageOverview,
 };
+use ai_insight::{build_snapshot, log_snapshot, InsightLine, LevelMask};
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
@@ -14,7 +15,16 @@ use crate::panels;
 use crate::theme;
 
 pub const MAX_LOG_LINES: usize = 10_000;
+pub const NETWORK_HISTORY_WINDOW: Duration = Duration::from_secs(60);
 const MAX_DRAIN_PER_FRAME: usize = 500;
+const INSIGHT_COOLDOWN: Duration = Duration::from_secs(15);
+
+#[derive(Clone, Debug)]
+pub struct NetworkSample {
+    pub instant: Instant,
+    pub rx_rate_bps: f64,
+    pub tx_rate_bps: f64,
+}
 
 pub struct App {
     pub adb_error: Option<String>,
@@ -29,7 +39,8 @@ pub struct App {
     pub network_poller: Option<NetworkPoller>,
     pub protocol_rx: Option<Receiver<ProtocolUpdate>>,
     pub protocol_poller: Option<ProtocolPoller>,
-    pub network_stats: Option<Vec<panels::NetworkRow>>,
+    pub network_stats: Option<NetworkStats>,
+    pub network_history: VecDeque<NetworkSample>,
     pub network_error: Option<String>,
     pub protocol_stats: Option<ProtocolStats>,
     pub protocol_error: Option<String>,
@@ -62,6 +73,34 @@ pub struct App {
     pub error_logcat_filter: String,
     pub logcat_tag_input: String,
     pub logcat_tag_filters: Vec<LogcatTagFilter>,
+    pub insight: InsightState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsightStatus {
+    Idle,
+    SnapshotLogged,
+}
+
+pub struct InsightState {
+    pub status: InsightStatus,
+    last_analyze: Option<Instant>,
+}
+
+impl Default for InsightState {
+    fn default() -> Self {
+        Self {
+            status: InsightStatus::Idle,
+            last_analyze: None,
+        }
+    }
+}
+
+impl InsightState {
+    pub fn can_analyze(&self) -> bool {
+        self.last_analyze
+            .is_none_or(|at| at.elapsed() >= INSIGHT_COOLDOWN)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -75,8 +114,9 @@ pub struct CachedLogLine {
     full: String,
     compact: String,
     pub level: char,
-    #[allow(dead_code)]
     pub tag: String,
+    pub message: String,
+    pub received_at: Instant,
 }
 
 impl CachedLogLine {
@@ -86,6 +126,8 @@ impl CachedLogLine {
             compact: entry.format_line_with_timestamp(false),
             level: entry.level,
             tag: entry.tag.clone(),
+            message: entry.message.clone(),
+            received_at: Instant::now(),
         }
     }
 
@@ -118,7 +160,11 @@ impl CachedLogLine {
 }
 
 impl App {
-    pub fn new(adb_error: Option<String>, devices: Vec<DeviceInfo>, list_error: Option<String>) -> Self {
+    pub fn new(
+        adb_error: Option<String>,
+        devices: Vec<DeviceInfo>,
+        list_error: Option<String>,
+    ) -> Self {
         let mut app = App {
             adb_error,
             devices,
@@ -133,6 +179,7 @@ impl App {
             protocol_rx: None,
             protocol_poller: None,
             network_stats: None,
+            network_history: VecDeque::new(),
             network_error: None,
             protocol_stats: None,
             protocol_error: None,
@@ -165,6 +212,7 @@ impl App {
             error_logcat_filter: String::new(),
             logcat_tag_input: String::new(),
             logcat_tag_filters: Vec::new(),
+            insight: InsightState::default(),
         };
         if let Some(serial) = first_ready_serial(&app.devices) {
             app.select_device(serial);
@@ -326,6 +374,7 @@ impl App {
         self.logcat_tag_input.clear();
         self.logcat_tag_filters.clear();
         self.network_stats = None;
+        self.network_history.clear();
         self.network_error = None;
         self.protocol_stats = None;
         self.protocol_error = None;
@@ -336,6 +385,34 @@ impl App {
         self.ram_error = None;
         self.storage_gauge = None;
         self.storage_gauge_error = None;
+        self.insight = InsightState::default();
+    }
+
+    pub fn request_insight(&mut self) {
+        let Some(serial) = self.selected_serial.clone() else {
+            return;
+        };
+        if !self.insight.can_analyze() {
+            return;
+        }
+
+        let model = self
+            .devices
+            .iter()
+            .find(|device| device.serial == serial)
+            .map(|device| device.model.as_str())
+            .unwrap_or("unknown");
+        let now = Instant::now();
+        let lines = self.error_lines.iter().map(|line| InsightLine {
+            received_at: line.received_at,
+            level: line.level,
+            tag: line.tag.clone(),
+            message: line.message.clone(),
+        });
+        let snapshot = build_snapshot(lines, LevelMask::Error, model, &serial, now);
+        log_snapshot(&snapshot);
+        self.insight.status = InsightStatus::SnapshotLogged;
+        self.insight.last_analyze = Some(now);
     }
 
     fn stop_streams(&mut self) {
@@ -439,7 +516,15 @@ impl App {
         while let Ok(update) = rx.try_recv() {
             match update {
                 NetworkUpdate::Stats(stats) => {
-                    self.network_stats = Some(panels::network_rows_from_stats(&stats));
+                    if self.network_stats.is_some() {
+                        self.network_history.push_back(NetworkSample {
+                            instant: Instant::now(),
+                            rx_rate_bps: stats.rx_rate_bps,
+                            tx_rate_bps: stats.tx_rate_bps,
+                        });
+                        prune_network_history(&mut self.network_history);
+                    }
+                    self.network_stats = Some(stats);
                     self.network_error = None;
                     updated = true;
                 }
@@ -692,6 +777,15 @@ fn take_log_entries(rx: Option<&Receiver<LogEntry>>, auto_update: bool) -> Vec<L
 fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
     while buffer.len() > MAX_LOG_LINES {
         buffer.pop_front();
+    }
+}
+
+fn prune_network_history(history: &mut VecDeque<NetworkSample>) {
+    while history
+        .front()
+        .is_some_and(|sample| sample.instant.elapsed() > NETWORK_HISTORY_WINDOW)
+    {
+        history.pop_front();
     }
 }
 

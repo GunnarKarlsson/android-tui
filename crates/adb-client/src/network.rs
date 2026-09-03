@@ -10,9 +10,14 @@ use crate::adb::run_adb_for_serial;
 use crate::background::signal_stop_and_detach;
 use crate::error::AdbError;
 
-const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const TRANSPORT_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 const MAX_BACKOFF_INTERVAL: Duration = Duration::from_secs(5);
 const BACKOFF_STEP: Duration = Duration::from_secs(1);
+
+const VIRTUAL_IFACE_PREFIXES: &[&str] = &[
+    "dummy", "ifb", "tunl", "sit", "ip6tnl", "gre", "ip6gre", "teql",
+];
 
 static NETSTATS_IFACE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"iface=(\S+)\s+ident=\[\{type=(\w+)").expect("valid netstats regex")
@@ -34,6 +39,10 @@ pub struct NetworkInterfaceStats {
 pub struct NetworkStats {
     pub interfaces: Vec<NetworkInterfaceStats>,
     pub timestamp: SystemTime,
+    /// Device-wide RX rate from real transports (WiFi / Mobile / Ethernet).
+    pub rx_rate_bps: f64,
+    /// Device-wide TX rate from real transports (WiFi / Mobile / Ethernet).
+    pub tx_rate_bps: f64,
 }
 
 /// Update from the network poller — either a successful snapshot or a transient error.
@@ -50,7 +59,7 @@ pub struct NetworkPoller {
 }
 
 impl NetworkPoller {
-    /// Polls network stats every two seconds.
+    /// Polls `/proc/net/dev` every second.
     pub fn spawn(serial: &str) -> Result<(Receiver<NetworkUpdate>, Self), AdbError> {
         Self::spawn_with_interval(serial, DEFAULT_POLL_INTERVAL)
     }
@@ -66,16 +75,14 @@ impl NetworkPoller {
         let join_handle = thread::spawn(move || {
             let mut poll_interval = interval;
             let mut previous: Option<NetworkSnapshot> = None;
+            let mut transports = TransportCache::default();
 
             while stop_rx.try_recv().is_err() {
-                match fetch_network_stats(&serial, previous.as_ref()) {
+                match fetch_network_stats(&serial, previous.as_ref(), &mut transports) {
                     Ok(stats) => {
                         poll_interval = interval;
                         previous = Some(NetworkSnapshot::from_stats(&stats));
-                        if update_tx
-                            .send(NetworkUpdate::Stats(stats))
-                            .is_err()
-                        {
+                        if update_tx.send(NetworkUpdate::Stats(stats)).is_err() {
                             break;
                         }
                     }
@@ -118,6 +125,12 @@ impl Drop for NetworkPoller {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct TransportCache {
+    map: HashMap<String, String>,
+    last_refresh: Option<Instant>,
+}
+
 #[derive(Debug, Clone)]
 struct NetworkSnapshot {
     bytes: HashMap<String, (u64, u64)>,
@@ -141,24 +154,23 @@ impl NetworkSnapshot {
 fn fetch_network_stats(
     serial: &str,
     previous: Option<&NetworkSnapshot>,
+    transports: &mut TransportCache,
 ) -> Result<NetworkStats, AdbError> {
     let proc_net = run_adb_for_serial(serial, &["shell", "cat", "/proc/net/dev"])?;
     let raw_interfaces = parse_proc_net_dev(&String::from_utf8_lossy(&proc_net.stdout));
 
-    let transports = match run_adb_for_serial(serial, &["shell", "dumpsys", "netstats", "detail"]) {
-        Ok(output) => parse_netstats_transports(&String::from_utf8_lossy(&output.stdout)),
-        Err(_) => HashMap::new(),
-    };
+    refresh_transports(serial, &raw_interfaces, transports);
 
     let elapsed_secs = previous
         .map(|prev| prev.instant.elapsed().as_secs_f64())
         .unwrap_or(0.0);
 
-    let interfaces = raw_interfaces
+    let interfaces: Vec<NetworkInterfaceStats> = raw_interfaces
         .into_iter()
         .filter(|(iface, _, _)| iface != "lo")
         .map(|(iface, rx_bytes, tx_bytes)| {
             let transport = transports
+                .map
                 .get(&iface)
                 .cloned()
                 .unwrap_or_else(|| infer_transport(&iface).to_string());
@@ -187,10 +199,72 @@ fn fetch_network_stats(
         })
         .collect();
 
+    let (rx_rate_bps, tx_rate_bps) = device_totals(&interfaces);
+
     Ok(NetworkStats {
         interfaces,
         timestamp: SystemTime::now(),
+        rx_rate_bps,
+        tx_rate_bps,
     })
+}
+
+fn refresh_transports(
+    serial: &str,
+    raw_interfaces: &[(String, u64, u64)],
+    cache: &mut TransportCache,
+) {
+    let unknown_iface = raw_interfaces
+        .iter()
+        .any(|(iface, _, _)| iface != "lo" && !cache.map.contains_key(iface));
+    let stale = cache
+        .last_refresh
+        .map(|t| t.elapsed() >= TRANSPORT_REFRESH_INTERVAL)
+        .unwrap_or(true);
+
+    if !unknown_iface && !stale {
+        return;
+    }
+
+    if let Ok(output) = run_adb_for_serial(serial, &["shell", "dumpsys", "netstats", "detail"]) {
+        cache
+            .map
+            .extend(parse_netstats_transports(&String::from_utf8_lossy(
+                &output.stdout,
+            )));
+    }
+
+    for (iface, _, _) in raw_interfaces {
+        if iface == "lo" {
+            continue;
+        }
+        cache
+            .map
+            .entry(iface.clone())
+            .or_insert_with(|| infer_transport(iface).to_string());
+    }
+    cache.last_refresh = Some(Instant::now());
+}
+
+fn device_totals(interfaces: &[NetworkInterfaceStats]) -> (f64, f64) {
+    interfaces
+        .iter()
+        .filter(|iface| counts_toward_device_total(iface))
+        .fold((0.0, 0.0), |(rx, tx), iface| {
+            (rx + iface.rx_rate_bps, tx + iface.tx_rate_bps)
+        })
+}
+
+fn counts_toward_device_total(iface: &NetworkInterfaceStats) -> bool {
+    matches!(iface.transport.as_str(), "WiFi" | "Mobile" | "Ethernet")
+        && !is_virtual_interface(&iface.interface)
+}
+
+fn is_virtual_interface(iface: &str) -> bool {
+    let lower = iface.to_lowercase();
+    VIRTUAL_IFACE_PREFIXES
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
 }
 
 fn parse_proc_net_dev(text: &str) -> Vec<(String, u64, u64)> {
@@ -327,6 +401,48 @@ Active interfaces:
         assert_eq!(infer_transport("rmnet_data0"), "Mobile");
         assert_eq!(infer_transport("eth0"), "Ethernet");
         assert_eq!(infer_transport("dummy0"), "Other");
+    }
+
+    #[test]
+    fn virtual_interface_denylist() {
+        assert!(is_virtual_interface("dummy0"));
+        assert!(is_virtual_interface("ifb0"));
+        assert!(is_virtual_interface("tunl0"));
+        assert!(is_virtual_interface("sit0"));
+        assert!(is_virtual_interface("ip6tnl0"));
+        assert!(!is_virtual_interface("wlan0"));
+        assert!(!is_virtual_interface("eth0"));
+        assert!(!is_virtual_interface("rmnet_data0"));
+    }
+
+    fn iface(name: &str, transport: &str, rx_rate: f64, tx_rate: f64) -> NetworkInterfaceStats {
+        NetworkInterfaceStats {
+            interface: name.to_string(),
+            transport: transport.to_string(),
+            rx_bytes: 0,
+            tx_bytes: 0,
+            rx_rate_bps: rx_rate,
+            tx_rate_bps: tx_rate,
+        }
+    }
+
+    #[test]
+    fn device_totals_sum_real_transports() {
+        let (rx, tx) = device_totals(&[
+            iface("wlan0", "WiFi", 1000.0, 100.0),
+            iface("rmnet0", "Mobile", 500.0, 50.0),
+            iface("dummy0", "Other", 9999.0, 9999.0),
+            iface("ifb0", "Other", 8888.0, 8888.0),
+        ]);
+        assert_eq!(rx, 1500.0);
+        assert_eq!(tx, 150.0);
+    }
+
+    #[test]
+    fn device_totals_exclude_virtual_even_if_labeled_ethernet() {
+        let (rx, tx) = device_totals(&[iface("dummy0", "Ethernet", 100.0, 20.0)]);
+        assert_eq!(rx, 0.0);
+        assert_eq!(tx, 0.0);
     }
 
     #[test]

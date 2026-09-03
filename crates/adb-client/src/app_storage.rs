@@ -12,13 +12,11 @@ use crate::error::AdbError;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const BATCH_SIZE: usize = 20;
 
-static STORAGE_BYTES: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^(.+?): (\d+) bytes").expect("valid storage bytes regex")
-});
+static STORAGE_BYTES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(.+?): (\d+) bytes").expect("valid storage bytes regex"));
 
-static PKG_MARKER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^@PKG@(.+)$").expect("valid package marker regex")
-});
+static PKG_MARKER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^@PKG@(.+)$").expect("valid package marker regex"));
 
 /// Per-app storage sizes from `cmd package get-package-storage-stats`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +79,11 @@ impl Drop for AppStoragePoller {
     }
 }
 
-fn run_scan(serial: &str, update_tx: &Sender<AppStorageUpdate>, stop_rx: &Receiver<()>) -> Result<(), ()> {
+fn run_scan(
+    serial: &str,
+    update_tx: &Sender<AppStorageUpdate>,
+    stop_rx: &Receiver<()>,
+) -> Result<(), ()> {
     let packages = match fetch_package_list(serial) {
         Ok(packages) => packages,
         Err(err) => {
@@ -144,7 +146,11 @@ fn fetch_package_list(serial: &str) -> Result<Vec<String>, AdbError> {
     let output = run_adb_for_serial(serial, &["shell", "pm", "list", "packages"])?;
     let mut packages: Vec<String> = String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter_map(|line| line.strip_prefix("package:").map(str::trim).map(str::to_string))
+        .filter_map(|line| {
+            line.strip_prefix("package:")
+                .map(str::trim)
+                .map(str::to_string)
+        })
         .collect();
     packages.sort();
     Ok(packages)
@@ -284,7 +290,11 @@ dexopt artifacts: 54725272 bytes (52.19 Mb)
         let sample = "package:com.android.chrome\npackage:com.google.android.gms\n";
         let list = sample
             .lines()
-            .filter_map(|line| line.strip_prefix("package:").map(str::trim).map(str::to_string))
+            .filter_map(|line| {
+                line.strip_prefix("package:")
+                    .map(str::trim)
+                    .map(str::to_string)
+            })
             .collect::<Vec<_>>();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0], "com.android.chrome");

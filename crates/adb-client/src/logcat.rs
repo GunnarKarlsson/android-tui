@@ -248,7 +248,10 @@ fn read_logcat_stderr(child: Arc<std::sync::Mutex<Child>>, entry_tx: Sender<LogE
 
 /// Read one line as UTF-8 lossy text. Unlike [`BufRead::lines`], invalid bytes do not
 /// terminate the stream.
-fn read_line_lossy(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> std::io::Result<Option<String>> {
+fn read_line_lossy(
+    reader: &mut impl BufRead,
+    buffer: &mut Vec<u8>,
+) -> std::io::Result<Option<String>> {
     buffer.clear();
     let bytes_read = reader.read_until(b'\n', buffer)?;
     if bytes_read == 0 {
@@ -296,7 +299,10 @@ fn parse_logcat_line(line: &str) -> Option<LogEntry> {
         tid,
         level: captures.get(4)?.as_str().chars().next()?,
         tag: captures.get(5)?.as_str().to_string(),
-        message: captures.get(6).map(|m| m.as_str().to_string()).unwrap_or_default(),
+        message: captures
+            .get(6)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default(),
     })
 }
 
@@ -313,7 +319,8 @@ mod tests {
 
     #[test]
     fn parse_standard_logcat_line() {
-        let entry = parse_logcat_line("03-15 10:23:45.123  1234  5678 I MyTag: Hello world").unwrap();
+        let entry =
+            parse_logcat_line("03-15 10:23:45.123  1234  5678 I MyTag: Hello world").unwrap();
 
         assert_eq!(entry.timestamp, "03-15 10:23:45.123");
         assert_eq!(entry.pid, 1234);
@@ -325,10 +332,9 @@ mod tests {
 
     #[test]
     fn parse_error_logcat_line() {
-        let entry = parse_logcat_line(
-            "09-01 17:00:01.456  9999  9999 E AndroidRuntime: FATAL EXCEPTION",
-        )
-        .unwrap();
+        let entry =
+            parse_logcat_line("09-01 17:00:01.456  9999  9999 E AndroidRuntime: FATAL EXCEPTION")
+                .unwrap();
 
         assert_eq!(entry.level, 'E');
         assert_eq!(entry.tag, "AndroidRuntime");

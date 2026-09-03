@@ -23,13 +23,11 @@ static IDENT_LINE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("valid ident regex")
 });
 
-static HISTORY_LINE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\brb=(\d+)\b.*\btb=(\d+)\b").expect("valid history regex")
-});
+static HISTORY_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\brb=(\d+)\b.*\btb=(\d+)\b").expect("valid history regex"));
 
-static TOP_CALLER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\{uid=(\d+),package=([^}]+)\}").expect("valid top caller regex")
-});
+static TOP_CALLER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{uid=(\d+),package=([^}]+)\}").expect("valid top caller regex"));
 
 /// Per-app traffic from `dumpsys netstats --uid` (`tag=0x0` rows).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -519,7 +517,10 @@ UID tag stats:
     #[test]
     fn ignores_uid_tag_stats_section() {
         let traffic = parse_uid_traffic(UID_STATS_SAMPLE);
-        let total: u64 = traffic.values().map(|s| s.foreground_bytes + s.background_bytes).sum();
+        let total: u64 = traffic
+            .values()
+            .map(|s| s.foreground_bytes + s.background_bytes)
+            .sum();
         assert!(total < 1_000_000);
     }
 }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/adb-client", "crates/android-terminal"]
+members = ["crates/adb-client", "crates/ai-insight", "crates/android-terminal"]
 resolver = "2"
 
 [workspace.package]
@@ -12,6 +12,10 @@ anyhow = "1.0.98"
 crossbeam-channel = "0.5.15"
 eframe = "0.31.1"
 egui = "0.31.1"
+egui_plot = "0.31.0"
 egui_tiles = "0.12.0"
 regex = "1.11.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
 thiserror = "2.0.12"

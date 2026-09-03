@@ -2,8 +2,9 @@ use std::collections::{HashMap, VecDeque};
 
 use adb_client::{NetworkStats, ProtocolStats, StorageCategory, StorageOverview};
 use eframe::egui;
+use egui_plot::{Line, Plot, PlotPoints};
 
-use crate::app::{App, CachedLogLine, LogcatTagFilter};
+use crate::app::{App, CachedLogLine, InsightStatus, LogcatTagFilter, NETWORK_HISTORY_WINDOW};
 use crate::theme;
 
 #[derive(Default)]
@@ -64,13 +65,14 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
 
     theme::filter_row(ui, |ui| {
         ui.label("Tag:");
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut app.logcat_tag_input)
-                .hint_text("Add tag…")
-                .desired_width(ui.available_width())
-                .id_salt("logcat_tag_input"),
-        )
-        .on_hover_text("Press Enter to add a tag filter");
+        let response = ui
+            .add(
+                egui::TextEdit::singleline(&mut app.logcat_tag_input)
+                    .hint_text("Add tag…")
+                    .desired_width(ui.available_width())
+                    .id_salt("logcat_tag_input"),
+            )
+            .on_hover_text("Press Enter to add a tag filter");
         if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
             app.add_logcat_tag();
             response.request_focus();
@@ -118,6 +120,28 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         LogScrollStyle::ByLevel,
         Some(&tag_filters),
     );
+}
+
+pub fn insight_header(ui: &mut egui::Ui, app: &App) -> bool {
+    let enabled = app.selected_serial.is_some() && app.insight.can_analyze();
+    ui.add_enabled(enabled, egui::Button::new("Analyze"))
+        .clicked()
+}
+
+pub fn insight(ui: &mut egui::Ui, app: &App) {
+    if app.selected_serial.is_none() {
+        theme::panel_loading(ui);
+        return;
+    }
+
+    match app.insight.status {
+        InsightStatus::Idle => {
+            ui.label("Analyze to log the error snapshot");
+        }
+        InsightStatus::SnapshotLogged => {
+            ui.label("snapshot logged");
+        }
+    }
 }
 
 pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
@@ -291,10 +315,8 @@ fn show_usage_donut(
                 ui.set_width(ui.available_width());
 
                 let diameter = ui.available_width().clamp(80.0, 160.0);
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(diameter, diameter),
-                    egui::Sense::hover(),
-                );
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(diameter, diameter), egui::Sense::hover());
 
                 let painter = ui.painter_at(rect);
                 let center = rect.center();
@@ -342,7 +364,15 @@ fn paint_usage_donut(
     let start = -TAU / 4.0;
     let used = fraction.clamp(0.0, 1.0);
 
-    paint_ring_arc(painter, center, radius, start, TAU, stroke_width, track_color);
+    paint_ring_arc(
+        painter,
+        center,
+        radius,
+        start,
+        TAU,
+        stroke_width,
+        track_color,
+    );
     if used > 0.0 {
         paint_ring_arc(
             painter,
@@ -373,7 +403,13 @@ fn paint_ring_arc(
     }));
 }
 
-fn arc_points(center: egui::Pos2, radius: f32, start: f32, sweep: f32, steps: usize) -> Vec<egui::Pos2> {
+fn arc_points(
+    center: egui::Pos2,
+    radius: f32,
+    start: f32,
+    sweep: f32,
+    steps: usize,
+) -> Vec<egui::Pos2> {
     (0..=steps)
         .map(|step| {
             let angle = start + sweep * step as f32 / steps as f32;
@@ -390,33 +426,52 @@ fn format_gb_from_bytes(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
 }
 
+pub fn network_header(ui: &mut egui::Ui, app: &App) {
+    let Some(stats) = &app.network_stats else {
+        return;
+    };
+
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.colored_label(
+            theme::colors::SPARK_TX,
+            format!("↑ {}", format_throughput(stats.tx_rate_bps)),
+        );
+        ui.colored_label(
+            theme::colors::SPARK_RX,
+            format!("↓ {}", format_throughput(stats.rx_rate_bps)),
+        );
+    });
+}
+
 pub fn network(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.network_error {
         theme::error_label(ui, error);
     }
 
-    theme::panel_body(ui, theme::colors::NETWORK_BODY, |ui| {
-        if app.selected_serial.is_none() {
+    if app.selected_serial.is_none() {
+        theme::panel_loading(ui);
+        return;
+    }
+
+    let Some(stats) = &app.network_stats else {
+        if app.network_rx.is_some() {
+            ui.label("Fetching network stats…");
+        } else {
             theme::panel_loading(ui);
-            return;
         }
+        return;
+    };
 
-        let Some(stats) = &app.network_stats else {
-            if app.network_rx.is_some() {
-                ui.label("Fetching network stats…");
-            } else {
-                theme::panel_loading(ui);
-            }
-            return;
-        };
+    show_network_plot(ui, app);
+    ui.add_space(8.0);
 
-        if stats.is_empty() {
-            ui.label("No network interfaces reported.");
-            return;
-        }
+    if stats.interfaces.is_empty() {
+        ui.label("No network interfaces reported.");
+        return;
+    }
 
-        show_network_table(ui, stats);
-    });
+    let rows = network_rows_from_stats(stats);
+    show_network_table(ui, &rows);
 }
 
 pub fn protocols(ui: &mut egui::Ui, app: &App) {
@@ -527,13 +582,88 @@ fn show_app_storage(ui: &mut egui::Ui, storage: &AppStorageState) {
             ui.end_row();
 
             for (package, bytes) in storage.sorted_rows() {
-                ui.label(truncate_package_name(package)).on_hover_text(package);
+                ui.label(truncate_package_name(package))
+                    .on_hover_text(package);
                 ui.label(match bytes {
-                            Some(value) => format_bytes_mb(value),
+                    Some(value) => format_bytes_mb(value),
                     None => "…".to_string(),
                 });
                 ui.end_row();
             }
+        });
+}
+
+fn show_network_plot(ui: &mut egui::Ui, app: &App) {
+    let window_secs = NETWORK_HISTORY_WINDOW.as_secs_f64();
+    let plot_height = (ui.available_height() * 0.55).max(80.0);
+
+    let rx_points: Vec<[f64; 2]> = app
+        .network_history
+        .iter()
+        .map(|sample| {
+            [
+                -sample.instant.elapsed().as_secs_f64(),
+                sample.rx_rate_bps / 1_048_576.0,
+            ]
+        })
+        .collect();
+    let tx_points: Vec<[f64; 2]> = app
+        .network_history
+        .iter()
+        .map(|sample| {
+            [
+                -sample.instant.elapsed().as_secs_f64(),
+                sample.tx_rate_bps / 1_048_576.0,
+            ]
+        })
+        .collect();
+
+    Plot::new("network_rx_tx")
+        .height(plot_height)
+        .include_x(-window_secs)
+        .include_x(0.0)
+        .include_y(0.0)
+        .allow_zoom(false)
+        .allow_drag(false)
+        .allow_scroll(false)
+        .allow_boxed_zoom(false)
+        .show_axes([true, true])
+        .show_grid(true)
+        .x_axis_formatter(move |mark, _range| {
+            let secs = mark.value.round() as i64;
+            if secs == 0 {
+                "0".to_string()
+            } else {
+                format!("{secs}s")
+            }
+        })
+        .y_axis_formatter(|mark, _range| {
+            if mark.value == 0.0 {
+                "0".to_string()
+            } else {
+                format!("{:.1} MB/s", mark.value)
+            }
+        })
+        .label_formatter(|name, value| {
+            if name.is_empty() {
+                format!("{:.2} MB/s", value.y)
+            } else {
+                format!("{name}: {:.2} MB/s", value.y)
+            }
+        })
+        .show(ui, |plot_ui| {
+            plot_ui.line(
+                Line::new(PlotPoints::from(rx_points))
+                    .color(theme::colors::SPARK_RX)
+                    .fill(0.0)
+                    .name("RX"),
+            );
+            plot_ui.line(
+                Line::new(PlotPoints::from(tx_points))
+                    .color(theme::colors::SPARK_TX)
+                    .fill(0.0)
+                    .name("TX"),
+            );
         });
 }
 
@@ -611,16 +741,22 @@ fn format_bytes_mb(bytes: u64) -> String {
 fn format_rate_mb(rx_bps: f64, tx_bps: f64) -> String {
     format!(
         "↓ {}  ↑ {}",
-        format_throughput_mb(rx_bps),
-        format_throughput_mb(tx_bps)
+        format_throughput(rx_bps),
+        format_throughput(tx_bps)
     )
 }
 
-fn format_throughput_mb(bps: f64) -> String {
+fn format_throughput(bps: f64) -> String {
     if bps < 0.0 {
         return "—".to_string();
     }
-    format!("{:.2} MB/s", bps / 1_048_576.0)
+    if bps >= 1_048_576.0 {
+        format!("{:.2} MB/s", bps / 1_048_576.0)
+    } else if bps >= 1024.0 {
+        format!("{:.1} KB/s", bps / 1024.0)
+    } else {
+        format!("{:.0} B/s", bps)
+    }
 }
 
 fn format_bytes(bytes: u64) -> String {
