@@ -7,7 +7,7 @@ use adb_client::{
     ProtocolUpdate, RamPoller, RamUpdate, StorageBreakdown, StorageBreakdownPoller,
     StorageBreakdownUpdate, StorageGaugePoller, StorageGaugeUpdate, StorageOverview,
 };
-use ai_insight::{build_snapshot, log_snapshot, InsightLine, LevelMask};
+use ai_insight::{build_snapshot, spawn_insight, InsightLine, InsightUpdate, LevelMask};
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
@@ -16,7 +16,8 @@ use crate::theme;
 
 pub const MAX_LOG_LINES: usize = 10_000;
 const MAX_DRAIN_PER_FRAME: usize = 500;
-const INSIGHT_COOLDOWN: Duration = Duration::from_secs(15);
+const INSIGHT_SETTLE: Duration = Duration::from_secs(5);
+const INSIGHT_COOLDOWN: Duration = Duration::from_secs(30);
 
 pub struct App {
     pub adb_error: Option<String>,
@@ -65,17 +66,24 @@ pub struct App {
     pub logcat_tag_input: String,
     pub logcat_tag_filters: Vec<LogcatTagFilter>,
     pub insight: InsightState,
+    insight_rx: Option<Receiver<InsightUpdate>>,
+    insight_serial: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsightStatus {
     Idle,
-    SnapshotLogged,
+    RequestSent,
+    RequestFailed,
 }
 
 pub struct InsightState {
     pub status: InsightStatus,
     last_analyze: Option<Instant>,
+    last_error_at: Option<Instant>,
+    last_sent_key: Option<String>,
+    ever_succeeded: bool,
+    generation: u64,
 }
 
 impl Default for InsightState {
@@ -83,14 +91,11 @@ impl Default for InsightState {
         Self {
             status: InsightStatus::Idle,
             last_analyze: None,
+            last_error_at: None,
+            last_sent_key: None,
+            ever_succeeded: false,
+            generation: 0,
         }
-    }
-}
-
-impl InsightState {
-    pub fn can_analyze(&self) -> bool {
-        self.last_analyze
-            .is_none_or(|at| at.elapsed() >= INSIGHT_COOLDOWN)
     }
 }
 
@@ -203,6 +208,8 @@ impl App {
             logcat_tag_input: String::new(),
             logcat_tag_filters: Vec::new(),
             insight: InsightState::default(),
+            insight_rx: None,
+            insight_serial: None,
         };
         if let Some(serial) = first_ready_serial(&app.devices) {
             app.select_device(serial);
@@ -375,13 +382,15 @@ impl App {
         self.storage_gauge = None;
         self.storage_gauge_error = None;
         self.insight = InsightState::default();
+        self.insight_rx = None;
+        self.insight_serial = None;
     }
 
-    pub fn request_insight(&mut self) {
+    fn request_insight(&mut self) {
         let Some(serial) = self.selected_serial.clone() else {
             return;
         };
-        if !self.insight.can_analyze() {
+        if self.insight.status == InsightStatus::RequestSent {
             return;
         }
 
@@ -399,9 +408,131 @@ impl App {
             message: line.message.clone(),
         });
         let snapshot = build_snapshot(lines, LevelMask::Error, model, &serial, now);
-        log_snapshot(&snapshot);
-        self.insight.status = InsightStatus::SnapshotLogged;
+        if snapshot.clusters.is_empty() {
+            return;
+        }
+        let key = snapshot.digest_key();
+        self.insight.generation = self.insight.generation.wrapping_add(1);
+        self.insight.status = InsightStatus::RequestSent;
         self.insight.last_analyze = Some(now);
+        self.insight.last_sent_key = Some(key);
+        self.insight_serial = Some(serial.clone());
+        self.insight_rx = Some(spawn_insight(snapshot, self.insight.generation, serial));
+        tracing::info!(
+            generation = self.insight.generation,
+            "insight request queued"
+        );
+    }
+
+    /// Queues an insight POST when recent errors settle or the digest changes.
+    fn maybe_request_insight(&mut self) {
+        if self.selected_serial.is_none() {
+            return;
+        }
+        if self.insight.status == InsightStatus::RequestSent {
+            return;
+        }
+
+        let Some(serial) = self.selected_serial.clone() else {
+            return;
+        };
+        let model = self
+            .devices
+            .iter()
+            .find(|device| device.serial == serial)
+            .map(|device| device.model.as_str())
+            .unwrap_or("unknown");
+        let now = Instant::now();
+        let lines = self.error_lines.iter().map(|line| InsightLine {
+            received_at: line.received_at,
+            level: line.level,
+            tag: line.tag.clone(),
+            message: line.message.clone(),
+        });
+        let snapshot = build_snapshot(lines, LevelMask::Error, model, &serial, now);
+        if snapshot.clusters.is_empty() {
+            return;
+        }
+        let key = snapshot.digest_key();
+
+        let should_send = match self.insight.last_sent_key.as_deref() {
+            None => self
+                .insight
+                .last_error_at
+                .is_some_and(|at| at.elapsed() >= INSIGHT_SETTLE),
+            Some(prev) => {
+                let cooled = self
+                    .insight
+                    .last_analyze
+                    .is_none_or(|at| at.elapsed() >= INSIGHT_COOLDOWN);
+                let key_changed = key != prev;
+                let high = snapshot.has_new_high_severity(prev);
+                if high && key_changed {
+                    true
+                } else if key_changed && cooled {
+                    true
+                } else if !key_changed
+                    && self.insight.status == InsightStatus::RequestFailed
+                    && cooled
+                {
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+
+        if should_send {
+            self.request_insight();
+        }
+    }
+
+    fn drain_insight(&mut self) -> bool {
+        let Some(rx) = self.insight_rx.as_ref() else {
+            return false;
+        };
+
+        let mut updated = false;
+        while let Ok(update) = rx.try_recv() {
+            let (generation, serial) = match &update {
+                InsightUpdate::Started { generation, serial }
+                | InsightUpdate::Reply {
+                    generation, serial, ..
+                }
+                | InsightUpdate::Error {
+                    generation, serial, ..
+                } => (*generation, serial.as_str()),
+            };
+            if generation != self.insight.generation {
+                continue;
+            }
+            if self.insight_serial.as_deref() != Some(serial) {
+                continue;
+            }
+            if self.selected_serial.as_deref() != Some(serial) {
+                continue;
+            }
+            match update {
+                InsightUpdate::Started { .. } => {
+                    self.insight.status = InsightStatus::RequestSent;
+                    updated = true;
+                }
+                InsightUpdate::Reply { .. } => {
+                    self.insight.status = InsightStatus::Idle;
+                    self.insight.ever_succeeded = true;
+                    updated = true;
+                }
+                InsightUpdate::Error { .. } => {
+                    self.insight.status = InsightStatus::RequestFailed;
+                    if !self.insight.ever_succeeded {
+                        self.insight.last_sent_key = None;
+                        self.insight.last_error_at = Some(Instant::now());
+                    }
+                    updated = true;
+                }
+            }
+        }
+        updated
     }
 
     fn stop_streams(&mut self) {
@@ -490,6 +621,7 @@ impl App {
                 self.error_lines
                     .push_back(CachedLogLine::from_entry(&entry));
                 trim_buffer(&mut self.error_lines);
+                self.insight.last_error_at = Some(Instant::now());
                 updated = true;
             }
         }
@@ -667,6 +799,10 @@ impl App {
         if self.drain_storage_breakdown() {
             needs_repaint = true;
         }
+        if self.drain_insight() {
+            needs_repaint = true;
+        }
+        self.maybe_request_insight();
         if needs_repaint {
             ctx.request_repaint();
         }

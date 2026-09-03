@@ -156,13 +156,9 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 self.app.logcat_line_spacing = line_spacing;
             }
             PanelId::Insight => {
-                let mut analyze = false;
                 theme::panel(ui, pane.title(), |ui| {
-                    analyze = panels::insight(ui, self.app);
+                    panels::insight(ui, self.app);
                 });
-                if analyze {
-                    self.app.request_insight();
-                }
             }
             PanelId::LogcatErrors => {
                 let mut show_timestamps = self.app.error_show_timestamps;

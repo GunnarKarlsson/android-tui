@@ -54,7 +54,7 @@ pub struct InsightCluster {
     pub samples: Vec<String>,
 }
 
-/// Matching line counts for the current time window and the time window before it.
+/// Counts for matching lines for the current time window and the time window before it.
 #[derive(Debug, Clone, Serialize)]
 pub struct SnapshotDeltas {
     pub count_now: u32,
@@ -76,6 +76,23 @@ pub struct InsightSnapshot {
 impl InsightSnapshot {
     pub fn to_pretty_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
+    }
+
+    /// Builds a short key from top clusters as `fingerprint:count/5` pairs joined by `|`.
+    pub fn digest_key(&self) -> String {
+        self.clusters
+            .iter()
+            .map(|cluster| format!("{}:{}", cluster.fingerprint, cluster.count / 5))
+            .collect::<Vec<_>>()
+            .join("|")
+    }
+
+    /// Returns true if any fatal or AndroidRuntime cluster fingerprint is absent from `previous_key`.
+    pub fn has_new_high_severity(&self, previous_key: &str) -> bool {
+        self.clusters.iter().any(|cluster| {
+            (cluster.level == 'F' || cluster.tag == "AndroidRuntime")
+                && !previous_key.contains(cluster.fingerprint.as_str())
+        })
     }
 }
 
@@ -235,5 +252,41 @@ mod tests {
         let snap = build_snapshot(lines, LevelMask::Error, "Pixel 8", "serial-1", now);
         assert_eq!(snap.clusters.len(), 1);
         assert!(!snap.clusters[0].samples[0].contains("secret.jwt"));
+    }
+
+    #[test]
+    fn digest_key_stable_for_same_count_bucket() {
+        let now = Instant::now();
+        let lines_a = [
+            line(now, 10, 'E', "OkHttp", "failed host 1"),
+            line(now, 8, 'E', "OkHttp", "failed host 2"),
+            line(now, 6, 'E', "OkHttp", "failed host 3"),
+        ];
+        let lines_b = [
+            line(now, 10, 'E', "OkHttp", "failed host 1"),
+            line(now, 8, 'E', "OkHttp", "failed host 2"),
+            line(now, 6, 'E', "OkHttp", "failed host 3"),
+            line(now, 4, 'E', "OkHttp", "failed host 4"),
+        ];
+        let snap_a = build_snapshot(lines_a, LevelMask::Error, "Pixel 8", "serial-1", now);
+        let snap_b = build_snapshot(lines_b, LevelMask::Error, "Pixel 8", "serial-1", now);
+        assert_eq!(snap_a.digest_key(), snap_b.digest_key());
+        assert_eq!(snap_a.clusters[0].count / 5, 0);
+        assert_eq!(snap_b.clusters[0].count / 5, 0);
+    }
+
+    #[test]
+    fn digest_key_changes_for_new_fingerprint() {
+        let now = Instant::now();
+        let lines_a = [line(now, 5, 'E', "OkHttp", "failed host")];
+        let lines_b = [
+            line(now, 5, 'E', "OkHttp", "failed host"),
+            line(now, 3, 'F', "AndroidRuntime", "FATAL EXCEPTION"),
+        ];
+        let snap_a = build_snapshot(lines_a, LevelMask::Error, "Pixel 8", "serial-1", now);
+        let snap_b = build_snapshot(lines_b, LevelMask::Error, "Pixel 8", "serial-1", now);
+        assert_ne!(snap_a.digest_key(), snap_b.digest_key());
+        assert!(snap_b.has_new_high_severity(&snap_a.digest_key()));
+        assert!(!snap_a.has_new_high_severity(&snap_a.digest_key()));
     }
 }

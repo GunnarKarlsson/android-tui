@@ -46,6 +46,10 @@ impl eframe::App for TerminalApp {
 }
 
 fn main() -> eframe::Result<()> {
+    load_dotenv();
+    init_tracing();
+    tracing::info!("android-terminal started");
+
     let adb_error = Adb::check_available().err().map(|e| e.to_string());
 
     let options = eframe::NativeOptions {
@@ -73,4 +77,30 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(TerminalApp::new(adb_error, devices, list_error)))
         }),
     )
+}
+
+/// Loads `crates/android-terminal/.env` into the process environment.
+fn load_dotenv() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".env");
+    if let Err(err) = dotenvy::from_path(&path) {
+        if err.not_found() {
+            return;
+        }
+        eprintln!("failed to load .env: {err}");
+    }
+}
+
+/// Installs a stderr `tracing` subscriber with `ai_insight` and `android_terminal` at info.
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("ai_insight=info,android_terminal=info"))
+        .add_directive("ai_insight=info".parse().expect("valid directive"))
+        .add_directive("android_terminal=info".parse().expect("valid directive"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_ansi(true)
+        .init();
 }

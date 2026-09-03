@@ -121,20 +121,21 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     );
 }
 
-pub fn insight(ui: &mut egui::Ui, app: &App) -> bool {
+pub fn insight(ui: &mut egui::Ui, app: &App) {
     if app.selected_serial.is_none() {
         theme::panel_loading(ui);
-        return false;
+        return;
     }
 
     match app.insight.status {
         InsightStatus::Idle => {
-            let response = ui.add(egui::Label::new("...").sense(egui::Sense::click()));
-            response.clicked() && app.insight.can_analyze()
+            ui.label("...");
         }
-        InsightStatus::SnapshotLogged => {
-            ui.label("snapshot logged");
-            false
+        InsightStatus::RequestSent => {
+            ui.label("request sent, see log");
+        }
+        InsightStatus::RequestFailed => {
+            ui.label("request failed, see log");
         }
     }
 }
