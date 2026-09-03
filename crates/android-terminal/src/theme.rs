@@ -461,13 +461,13 @@ pub fn panel_with_header_actions<R>(
 
 /// Like [`panel_with_header_actions`], with a bottom Auto-scroll footer inside the card.
 ///
-/// `add_contents` receives the same `auto_scroll` flag the footer toggles (header checkbox
-/// and footer label stay in sync).
+/// `add_contents` receives the current auto-scroll flag for stick-to-bottom; the footer
+/// is the only control that toggles it.
 pub fn panel_with_footer<R>(
     ui: &mut Ui,
     title: impl Into<egui::RichText>,
     add_header_actions: impl FnOnce(&mut Ui),
-    add_contents: impl FnOnce(&mut Ui, &mut bool) -> R,
+    add_contents: impl FnOnce(&mut Ui, bool) -> R,
     auto_scroll: &mut bool,
 ) -> R {
     // Same structure as `Frame::begin`/`end`, but always paint/allocate the tile-sized
@@ -495,7 +495,7 @@ pub fn panel_with_footer<R>(
     let result = content_ui
         .allocate_ui(egui::vec2(content_ui.available_width(), body_height), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
-            add_contents(ui, auto_scroll)
+            add_contents(ui, *auto_scroll)
         })
         .inner;
 
