@@ -40,17 +40,18 @@ pub fn create_default_tree() -> Tree<PanelId> {
     let devices = tiles.insert_pane(PanelId::Devices);
     let ram = tiles.insert_pane(PanelId::Ram);
     let storage = tiles.insert_pane(PanelId::Storage);
-    let left_column = tiles.insert_vertical_tile(vec![devices, ram, storage]);
+    let gauges = tiles.insert_horizontal_tile(vec![ram, storage]);
+    let system_stats = tiles.insert_pane(PanelId::SystemStats);
+    let left_column = tiles.insert_vertical_tile(vec![devices, gauges, system_stats]);
 
     let logcat_all = tiles.insert_pane(PanelId::LogcatAll);
-    let system_stats = tiles.insert_pane(PanelId::SystemStats);
-    let middle_column = tiles.insert_vertical_tile(vec![logcat_all, system_stats]);
+    let network = tiles.insert_pane(PanelId::Network);
+    let protocols = tiles.insert_pane(PanelId::Protocols);
+    let middle_column = tiles.insert_vertical_tile(vec![logcat_all, network, protocols]);
 
     let logcat_errors = tiles.insert_pane(PanelId::LogcatErrors);
     let insight = tiles.insert_pane(PanelId::Insight);
-    let network = tiles.insert_pane(PanelId::Network);
-    let protocols = tiles.insert_pane(PanelId::Protocols);
-    let right_column = tiles.insert_vertical_tile(vec![logcat_errors, insight, network, protocols]);
+    let right_column = tiles.insert_vertical_tile(vec![logcat_errors, insight]);
 
     let root = tiles.insert_horizontal_tile(vec![left_column, middle_column, right_column]);
 
@@ -59,29 +60,29 @@ pub fn create_default_tree() -> Tree<PanelId> {
         root,
         &[
             (left_column, 1.0),
-            (middle_column, 2.5),
-            (right_column, 2.5),
+            (middle_column, 1.0),
+            (right_column, 1.0),
         ],
     );
     set_linear_shares(
         &mut tiles,
         left_column,
-        &[(devices, 2.0), (ram, 1.5), (storage, 1.5)],
+        &[(devices, 2.0), (gauges, 1.5), (system_stats, 1.5)],
+    );
+    set_linear_shares(
+        &mut tiles,
+        gauges,
+        &[(ram, 1.0), (storage, 1.0)],
     );
     set_linear_shares(
         &mut tiles,
         middle_column,
-        &[(logcat_all, 2.0), (system_stats, 1.0)],
+        &[(logcat_all, 2.0), (network, 1.0), (protocols, 1.0)],
     );
     set_linear_shares(
         &mut tiles,
         right_column,
-        &[
-            (logcat_errors, 2.0),
-            (insight, 1.5),
-            (network, 1.0),
-            (protocols, 1.0),
-        ],
+        &[(logcat_errors, 2.0), (insight, 1.5)],
     );
 
     Tree::new("android_terminal_tiles", root, tiles)
