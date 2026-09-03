@@ -508,11 +508,13 @@ pub fn panel_with_footer<R>(
     result
 }
 
+/// Vertical padding above and below the footer status text.
+const FOOTER_PAD_Y: f32 = 8.0;
+
 /// Vertical space reserved for [`panel_footer`].
 fn panel_footer_height(ui: &Ui) -> f32 {
-    let spacing = ui.spacing().item_spacing.y;
     let text = ui.text_style_height(&TextStyle::Small);
-    spacing + text
+    text + 2.0 * FOOTER_PAD_Y
 }
 
 /// Draws the panel footer bar: top hairline, then right-aligned muted status text.
@@ -523,10 +525,9 @@ pub fn panel_footer(ui: &mut Ui) {
         egui::Sense::hover(),
     );
     if ui.is_rect_visible(rect) {
-        let spacing = ui.spacing().item_spacing.y;
         ui.painter().hline(
             rect.x_range(),
-            rect.top() + spacing * 0.5,
+            rect.top(),
             egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
         );
         ui.painter().text(
