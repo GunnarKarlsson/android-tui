@@ -11,5 +11,4 @@ anyhow.workspace = true
 crossbeam-channel.workspace = true
 eframe.workspace = true
 egui.workspace = true
-egui_plot.workspace = true
 egui_tiles.workspace = true

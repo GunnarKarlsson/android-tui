@@ -15,16 +15,8 @@ use crate::panels;
 use crate::theme;
 
 pub const MAX_LOG_LINES: usize = 10_000;
-pub const NETWORK_HISTORY_WINDOW: Duration = Duration::from_secs(60);
 const MAX_DRAIN_PER_FRAME: usize = 500;
 const INSIGHT_COOLDOWN: Duration = Duration::from_secs(15);
-
-#[derive(Clone, Debug)]
-pub struct NetworkSample {
-    pub instant: Instant,
-    pub rx_rate_bps: f64,
-    pub tx_rate_bps: f64,
-}
 
 pub struct App {
     pub adb_error: Option<String>,
@@ -40,7 +32,6 @@ pub struct App {
     pub protocol_rx: Option<Receiver<ProtocolUpdate>>,
     pub protocol_poller: Option<ProtocolPoller>,
     pub network_stats: Option<NetworkStats>,
-    pub network_history: VecDeque<NetworkSample>,
     pub network_error: Option<String>,
     pub protocol_stats: Option<ProtocolStats>,
     pub protocol_error: Option<String>,
@@ -179,7 +170,6 @@ impl App {
             protocol_rx: None,
             protocol_poller: None,
             network_stats: None,
-            network_history: VecDeque::new(),
             network_error: None,
             protocol_stats: None,
             protocol_error: None,
@@ -374,7 +364,6 @@ impl App {
         self.logcat_tag_input.clear();
         self.logcat_tag_filters.clear();
         self.network_stats = None;
-        self.network_history.clear();
         self.network_error = None;
         self.protocol_stats = None;
         self.protocol_error = None;
@@ -516,14 +505,6 @@ impl App {
         while let Ok(update) = rx.try_recv() {
             match update {
                 NetworkUpdate::Stats(stats) => {
-                    if self.network_stats.is_some() {
-                        self.network_history.push_back(NetworkSample {
-                            instant: Instant::now(),
-                            rx_rate_bps: stats.rx_rate_bps,
-                            tx_rate_bps: stats.tx_rate_bps,
-                        });
-                        prune_network_history(&mut self.network_history);
-                    }
                     self.network_stats = Some(stats);
                     self.network_error = None;
                     updated = true;
@@ -777,15 +758,6 @@ fn take_log_entries(rx: Option<&Receiver<LogEntry>>, auto_update: bool) -> Vec<L
 fn trim_buffer(buffer: &mut VecDeque<CachedLogLine>) {
     while buffer.len() > MAX_LOG_LINES {
         buffer.pop_front();
-    }
-}
-
-fn prune_network_history(history: &mut VecDeque<NetworkSample>) {
-    while history
-        .front()
-        .is_some_and(|sample| sample.instant.elapsed() > NETWORK_HISTORY_WINDOW)
-    {
-        history.pop_front();
     }
 }
 

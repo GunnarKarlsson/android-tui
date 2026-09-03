@@ -2,9 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use adb_client::{NetworkStats, ProtocolStats, StorageCategory, StorageOverview};
 use eframe::egui;
-use egui_plot::{Line, Plot, PlotPoints};
 
-use crate::app::{App, CachedLogLine, InsightStatus, LogcatTagFilter, NETWORK_HISTORY_WINDOW};
+use crate::app::{App, CachedLogLine, InsightStatus, LogcatTagFilter};
 use crate::theme;
 
 #[derive(Default)]
@@ -462,9 +461,6 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
         return;
     };
 
-    show_network_plot(ui, app);
-    ui.add_space(8.0);
-
     if stats.interfaces.is_empty() {
         ui.label("No network interfaces reported.");
         return;
@@ -590,80 +586,6 @@ fn show_app_storage(ui: &mut egui::Ui, storage: &AppStorageState) {
                 });
                 ui.end_row();
             }
-        });
-}
-
-fn show_network_plot(ui: &mut egui::Ui, app: &App) {
-    let window_secs = NETWORK_HISTORY_WINDOW.as_secs_f64();
-    let plot_height = (ui.available_height() * 0.55).max(80.0);
-
-    let rx_points: Vec<[f64; 2]> = app
-        .network_history
-        .iter()
-        .map(|sample| {
-            [
-                -sample.instant.elapsed().as_secs_f64(),
-                sample.rx_rate_bps / 1_048_576.0,
-            ]
-        })
-        .collect();
-    let tx_points: Vec<[f64; 2]> = app
-        .network_history
-        .iter()
-        .map(|sample| {
-            [
-                -sample.instant.elapsed().as_secs_f64(),
-                sample.tx_rate_bps / 1_048_576.0,
-            ]
-        })
-        .collect();
-
-    Plot::new("network_rx_tx")
-        .height(plot_height)
-        .include_x(-window_secs)
-        .include_x(0.0)
-        .include_y(0.0)
-        .allow_zoom(false)
-        .allow_drag(false)
-        .allow_scroll(false)
-        .allow_boxed_zoom(false)
-        .show_axes([true, true])
-        .show_grid(true)
-        .x_axis_formatter(move |mark, _range| {
-            let secs = mark.value.round() as i64;
-            if secs == 0 {
-                "0".to_string()
-            } else {
-                format!("{secs}s")
-            }
-        })
-        .y_axis_formatter(|mark, _range| {
-            if mark.value == 0.0 {
-                "0".to_string()
-            } else {
-                format!("{:.1} MB/s", mark.value)
-            }
-        })
-        .label_formatter(|name, value| {
-            if name.is_empty() {
-                format!("{:.2} MB/s", value.y)
-            } else {
-                format!("{name}: {:.2} MB/s", value.y)
-            }
-        })
-        .show(ui, |plot_ui| {
-            plot_ui.line(
-                Line::new(PlotPoints::from(rx_points))
-                    .color(theme::colors::SPARK_RX)
-                    .fill(0.0)
-                    .name("RX"),
-            );
-            plot_ui.line(
-                Line::new(PlotPoints::from(tx_points))
-                    .color(theme::colors::SPARK_TX)
-                    .fill(0.0)
-                    .name("TX"),
-            );
         });
 }
 
