@@ -23,6 +23,8 @@ pub mod colors {
 
     /// Text and widget foreground.
     pub const OFF_WHITE: Color32 = Color32::from_rgb(232, 232, 228);
+    /// Native window title bar fill (macOS fullsize content chrome).
+    pub const TITLE_BAR: Color32 = Color32::from_rgb(48, 50, 54);
     /// Resize handle highlight (gap stays empty when idle).
     pub const PANEL_SPLITTER_HOVER: Color32 = Color32::from_rgb(96, 102, 112);
     /// Header rule inside a panel card.
@@ -100,6 +102,9 @@ pub const PANEL_INNER_PADDING: i8 = 8;
 /// Padding between the window edge and panel cards.
 pub const PANEL_CANVAS_MARGIN: i8 = 12;
 
+/// Height of the custom macOS title bar under the native traffic lights.
+pub const TITLE_BAR_HEIGHT: f32 = 28.0;
+
 /// Apply app-wide egui styling. Called once at startup from the eframe creation hook.
 pub fn configure(ctx: &Context) {
     install_fonts(ctx);
@@ -107,6 +112,39 @@ pub fn configure(ctx: &Context) {
     ctx.all_styles_mut(apply_shared_style);
     ctx.set_visuals_of(egui::Theme::Dark, dark_blue_visuals());
     ctx.set_theme(egui::Theme::Dark);
+    ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
+}
+
+/// macOS title strip: dark grey bar with off-white app title; traffic lights stay native.
+#[cfg(target_os = "macos")]
+pub fn title_bar(ctx: &Context) {
+    egui::TopBottomPanel::top("os_title_bar")
+        .exact_height(TITLE_BAR_HEIGHT)
+        .frame(egui::Frame::NONE.fill(colors::TITLE_BAR))
+        .show_separator_line(false)
+        .show(ctx, |ui| {
+            let rect = ui.max_rect();
+            let response = ui.interact(
+                rect,
+                ui.id().with("title_bar_drag"),
+                egui::Sense::click_and_drag(),
+            );
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if response.double_clicked() {
+                let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+            }
+
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Android Terminal",
+                FontId::new(13.0, FontFamily::Proportional),
+                colors::OFF_WHITE,
+            );
+        });
 }
 
 fn apply_shared_style(style: &mut egui::Style) {

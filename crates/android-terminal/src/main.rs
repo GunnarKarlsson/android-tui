@@ -31,6 +31,9 @@ impl eframe::App for TerminalApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.inner.update_panels(ctx);
 
+        #[cfg(target_os = "macos")]
+        theme::title_bar(ctx);
+
         eframe::egui::CentralPanel::default()
             .frame(theme::shell_frame(ctx))
             .show(ctx, |ui| {
@@ -52,10 +55,20 @@ fn main() -> eframe::Result<()> {
 
     let adb_error = Adb::check_available().err().map(|e| e.to_string());
 
+    let mut viewport = eframe::egui::ViewportBuilder::default()
+        .with_inner_size([1400.0, 900.0])
+        .with_title("Android Terminal");
+    #[cfg(target_os = "macos")]
+    {
+        // Content draws under the traffic lights; we paint a dark grey title strip.
+        viewport = viewport
+            .with_fullsize_content_view(true)
+            .with_titlebar_shown(false)
+            .with_title_shown(false);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size([1400.0, 900.0])
-            .with_title("Android Terminal"),
+        viewport,
         ..Default::default()
     };
 
