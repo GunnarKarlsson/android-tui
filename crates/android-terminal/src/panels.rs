@@ -48,9 +48,9 @@ impl AppStorageState {
     }
 }
 
-pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
+pub fn logcat_all(ui: &mut egui::Ui, app: &mut App, auto_scroll: &mut bool) {
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.auto_update_feed, "Auto-update feed");
+        ui.checkbox(auto_scroll, "Auto-update feed");
     });
     theme::filter_row(ui, |ui| {
         ui.label("Filter:");
@@ -112,7 +112,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
         ui,
         &app.log_lines,
         &matching,
-        app.auto_update_feed,
+        *auto_scroll,
         show_timestamps,
         app.logcat_line_spacing,
         egui::Id::new("logcat_all_scroll"),
@@ -121,14 +121,14 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     );
 }
 
-pub fn insight(ui: &mut egui::Ui, app: &mut App) {
+pub fn insight(ui: &mut egui::Ui, app: &mut App, auto_scroll: &mut bool) {
     if app.selected_serial.is_none() {
         theme::panel_loading(ui);
         return;
     }
 
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.insight_auto_update_feed, "Auto-update feed");
+        ui.checkbox(auto_scroll, "Auto-update feed");
     });
 
     theme::panel_body(ui, theme::colors::INSIGHT_BODY, |ui| {
@@ -146,7 +146,7 @@ pub fn insight(ui: &mut egui::Ui, app: &mut App) {
 
         egui::ScrollArea::vertical()
             .id_salt(egui::Id::new("insight_scroll"))
-            .stick_to_bottom(app.insight_auto_update_feed)
+            .stick_to_bottom(*auto_scroll)
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
@@ -162,9 +162,9 @@ pub fn insight(ui: &mut egui::Ui, app: &mut App) {
     });
 }
 
-pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
+pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App, auto_scroll: &mut bool) {
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.error_auto_update_feed, "Auto-update feed");
+        ui.checkbox(auto_scroll, "Auto-update feed");
     });
     theme::filter_row(ui, |ui| {
         ui.label("Filter:");
@@ -202,7 +202,7 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {
         ui,
         &app.error_lines,
         &matching,
-        app.error_auto_update_feed,
+        *auto_scroll,
         app.error_show_timestamps,
         app.error_line_spacing,
         egui::Id::new("logcat_errors_scroll"),

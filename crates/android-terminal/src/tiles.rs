@@ -145,41 +145,47 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
             PanelId::LogcatAll => {
                 let mut show_timestamps = self.app.logcat_show_timestamps;
                 let mut line_spacing = self.app.logcat_line_spacing;
+                let mut auto_scroll = self.app.auto_update_feed;
                 theme::panel_with_footer(
                     ui,
                     pane.title(),
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
-                    |ui| panels::logcat_all(ui, self.app),
-                    theme::panel_footer,
+                    |ui, auto_scroll| panels::logcat_all(ui, self.app, auto_scroll),
+                    &mut auto_scroll,
                 );
                 self.app.logcat_show_timestamps = show_timestamps;
                 self.app.logcat_line_spacing = line_spacing;
+                self.app.auto_update_feed = auto_scroll;
             }
             PanelId::Insight => {
+                let mut auto_scroll = self.app.insight_auto_update_feed;
                 theme::panel_with_footer(
                     ui,
                     pane.title(),
                     |_| {},
-                    |ui| panels::insight(ui, self.app),
-                    theme::panel_footer,
+                    |ui, auto_scroll| panels::insight(ui, self.app, auto_scroll),
+                    &mut auto_scroll,
                 );
+                self.app.insight_auto_update_feed = auto_scroll;
             }
             PanelId::LogcatErrors => {
                 let mut show_timestamps = self.app.error_show_timestamps;
                 let mut line_spacing = self.app.error_line_spacing;
+                let mut auto_scroll = self.app.error_auto_update_feed;
                 theme::panel_with_footer(
                     ui,
                     pane.title(),
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
-                    |ui| panels::logcat_errors(ui, self.app),
-                    theme::panel_footer,
+                    |ui, auto_scroll| panels::logcat_errors(ui, self.app, auto_scroll),
+                    &mut auto_scroll,
                 );
                 self.app.error_show_timestamps = show_timestamps;
                 self.app.error_line_spacing = line_spacing;
+                self.app.error_auto_update_feed = auto_scroll;
             }
             PanelId::SystemStats => {
                 theme::panel(ui, pane.title(), |ui| panels::storage_usage(ui, self.app));

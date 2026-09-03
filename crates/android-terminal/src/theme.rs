@@ -459,13 +459,16 @@ pub fn panel_with_header_actions<R>(
         .inner
 }
 
-/// Like [`panel_with_header_actions`], with a bottom footer row reserved inside the card.
+/// Like [`panel_with_header_actions`], with a bottom Auto-scroll footer inside the card.
+///
+/// `add_contents` receives the same `auto_scroll` flag the footer toggles (header checkbox
+/// and footer label stay in sync).
 pub fn panel_with_footer<R>(
     ui: &mut Ui,
     title: impl Into<egui::RichText>,
     add_header_actions: impl FnOnce(&mut Ui),
-    add_body: impl FnOnce(&mut Ui) -> R,
-    add_footer: impl FnOnce(&mut Ui),
+    add_contents: impl FnOnce(&mut Ui, &mut bool) -> R,
+    auto_scroll: &mut bool,
 ) -> R {
     // Same structure as `Frame::begin`/`end`, but always paint/allocate the tile-sized
     // content rect. Overflowing body content must not push the bottom stroke outside the
@@ -492,11 +495,11 @@ pub fn panel_with_footer<R>(
     let result = content_ui
         .allocate_ui(egui::vec2(content_ui.available_width(), body_height), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
-            add_body(ui)
+            add_contents(ui, auto_scroll)
         })
         .inner;
 
-    add_footer(&mut content_ui);
+    panel_footer(&mut content_ui, auto_scroll);
 
     let widget_rect = frame.widget_rect(content_rect);
     if ui.is_rect_visible(widget_rect) {
@@ -517,25 +520,45 @@ fn panel_footer_height(ui: &Ui) -> f32 {
     text + 2.0 * FOOTER_PAD_Y
 }
 
-/// Draws the panel footer bar: top hairline, then right-aligned muted status text.
-pub fn panel_footer(ui: &mut Ui) {
+/// Draws the panel footer bar: top hairline, then a clickable Auto-scroll on/off control.
+pub fn panel_footer(ui: &mut Ui, auto_scroll: &mut bool) {
     let height = panel_footer_height(ui);
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), height),
         egui::Sense::hover(),
     );
-    if ui.is_rect_visible(rect) {
-        ui.painter().hline(
-            rect.x_range(),
-            rect.top(),
-            egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
-        );
-        ui.painter().text(
-            egui::pos2(rect.right(), rect.center().y),
-            egui::Align2::RIGHT_CENTER,
-            "Auto-scroll: on",
-            ui.style().text_styles[&TextStyle::Small].clone(),
-            colors::FOOTER_TEXT,
-        );
+    if !ui.is_rect_visible(rect) {
+        return;
     }
+
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top(),
+        egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
+    );
+
+    let label = if *auto_scroll {
+        "Auto-scroll: on"
+    } else {
+        "Auto-scroll: off"
+    };
+
+    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let response = ui
+                .add(
+                    egui::Label::new(
+                        egui::RichText::new(label)
+                            .small()
+                            .color(colors::FOOTER_TEXT),
+                    )
+                    .sense(egui::Sense::click()),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Toggle auto-scroll");
+            if response.clicked() {
+                *auto_scroll = !*auto_scroll;
+            }
+        });
+    });
 }
