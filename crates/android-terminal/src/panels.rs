@@ -748,9 +748,12 @@ fn show_log_scroll(
     };
     let total_rows = matching.len();
 
+    // `stick_to_bottom` is egui's API for terminal/log follow. `animated(false)` keeps
+    // follow updates from lerping through the buffer when content grows.
     egui::ScrollArea::vertical()
         .id_salt(scroll_id)
         .stick_to_bottom(stick_to_bottom)
+        .animated(false)
         .auto_shrink([false, false])
         .show_rows(ui, row_height, total_rows, |ui, row_range| {
             for row in row_range {
