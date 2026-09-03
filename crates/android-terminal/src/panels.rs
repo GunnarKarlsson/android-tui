@@ -121,24 +121,20 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     );
 }
 
-pub fn insight_header(ui: &mut egui::Ui, app: &App) -> bool {
-    let enabled = app.selected_serial.is_some() && app.insight.can_analyze();
-    ui.add_enabled(enabled, egui::Button::new("Analyze"))
-        .clicked()
-}
-
-pub fn insight(ui: &mut egui::Ui, app: &App) {
+pub fn insight(ui: &mut egui::Ui, app: &App) -> bool {
     if app.selected_serial.is_none() {
         theme::panel_loading(ui);
-        return;
+        return false;
     }
 
     match app.insight.status {
         InsightStatus::Idle => {
-            ui.label("Analyze to log the error snapshot");
+            let response = ui.add(egui::Label::new("...").sense(egui::Sense::click()));
+            response.clicked() && app.insight.can_analyze()
         }
         InsightStatus::SnapshotLogged => {
             ui.label("snapshot logged");
+            false
         }
     }
 }
@@ -423,23 +419,6 @@ fn format_gb_from_kb(kb: u64) -> String {
 
 fn format_gb_from_bytes(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
-}
-
-pub fn network_header(ui: &mut egui::Ui, app: &App) {
-    let Some(stats) = &app.network_stats else {
-        return;
-    };
-
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.colored_label(
-            theme::colors::SPARK_TX,
-            format!("↑ {}", format_throughput(stats.tx_rate_bps)),
-        );
-        ui.colored_label(
-            theme::colors::SPARK_RX,
-            format!("↓ {}", format_throughput(stats.rx_rate_bps)),
-        );
-    });
 }
 
 pub fn network(ui: &mut egui::Ui, app: &App) {

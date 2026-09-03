@@ -157,14 +157,9 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
             }
             PanelId::Insight => {
                 let mut analyze = false;
-                theme::panel_with_header_actions(
-                    ui,
-                    pane.title(),
-                    |ui| {
-                        analyze = panels::insight_header(ui, self.app);
-                    },
-                    |ui| panels::insight(ui, self.app),
-                );
+                theme::panel(ui, pane.title(), |ui| {
+                    analyze = panels::insight(ui, self.app);
+                });
                 if analyze {
                     self.app.request_insight();
                 }
@@ -187,12 +182,7 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 theme::panel(ui, pane.title(), |ui| panels::storage_usage(ui, self.app));
             }
             PanelId::Network => {
-                theme::panel_with_header_actions(
-                    ui,
-                    pane.title(),
-                    |ui| panels::network_header(ui, self.app),
-                    |ui| panels::network(ui, self.app),
-                );
+                theme::panel(ui, pane.title(), |ui| panels::network(ui, self.app));
             }
             PanelId::Protocols => {
                 theme::panel(ui, pane.title(), |ui| panels::protocols(ui, self.app));

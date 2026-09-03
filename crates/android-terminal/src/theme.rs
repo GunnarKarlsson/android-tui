@@ -46,10 +46,6 @@ pub mod colors {
 
     /// Memory / Disk panel body text.
     pub const MEMORY_DISK_BODY: Color32 = Color32::from_rgb(180, 230, 80);
-    /// RX series and ↓ rate.
-    pub const SPARK_RX: Color32 = Color32::from_rgb(0, 180, 240);
-    /// TX series and ↑ rate.
-    pub const SPARK_TX: Color32 = Color32::from_rgb(220, 80, 180);
     /// App Traffic panel body text.
     pub const APP_TRAFFIC_BODY: Color32 = Color32::from_rgb(200, 170, 255);
 
