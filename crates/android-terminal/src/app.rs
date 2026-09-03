@@ -16,6 +16,7 @@ use crate::theme;
 
 pub const MAX_LOG_LINES: usize = 10_000;
 const MAX_DRAIN_PER_FRAME: usize = 500;
+const MAX_INSIGHTS: usize = 100;
 const INSIGHT_SETTLE: Duration = Duration::from_secs(5);
 const INSIGHT_COOLDOWN: Duration = Duration::from_secs(30);
 
@@ -79,6 +80,7 @@ pub enum InsightStatus {
 
 pub struct InsightState {
     pub status: InsightStatus,
+    pub replies: VecDeque<String>,
     last_analyze: Option<Instant>,
     last_error_at: Option<Instant>,
     last_sent_key: Option<String>,
@@ -90,6 +92,7 @@ impl Default for InsightState {
     fn default() -> Self {
         Self {
             status: InsightStatus::Idle,
+            replies: VecDeque::new(),
             last_analyze: None,
             last_error_at: None,
             last_sent_key: None,
@@ -517,9 +520,17 @@ impl App {
                     self.insight.status = InsightStatus::RequestSent;
                     updated = true;
                 }
-                InsightUpdate::Reply { .. } => {
+                InsightUpdate::Reply { text, .. } => {
+                    self.insight.replies.push_back(text);
+                    while self.insight.replies.len() > MAX_INSIGHTS {
+                        self.insight.replies.pop_front();
+                    }
                     self.insight.status = InsightStatus::Idle;
                     self.insight.ever_succeeded = true;
+                    tracing::info!(
+                        stored = self.insight.replies.len(),
+                        "insight reply stored"
+                    );
                     updated = true;
                 }
                 InsightUpdate::Error { .. } => {
