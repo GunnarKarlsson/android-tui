@@ -121,23 +121,45 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App) {
     );
 }
 
-pub fn insight(ui: &mut egui::Ui, app: &App) {
+pub fn insight(ui: &mut egui::Ui, app: &mut App) {
     if app.selected_serial.is_none() {
         theme::panel_loading(ui);
         return;
     }
 
-    match app.insight.status {
-        InsightStatus::Idle => {
-            ui.label("...");
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut app.insight_auto_update_feed, "Auto-update feed");
+    });
+
+    theme::panel_body(ui, theme::colors::INSIGHT_BODY, |ui| {
+        if app.insight.replies.is_empty() {
+            match app.insight.status {
+                InsightStatus::RequestFailed => {
+                    theme::error_label(ui, "request failed, see log");
+                }
+                InsightStatus::Idle | InsightStatus::RequestSent => {
+                    ui.label("...");
+                }
+            }
+            return;
         }
-        InsightStatus::RequestSent => {
-            ui.label("request sent, see log");
-        }
-        InsightStatus::RequestFailed => {
-            ui.label("request failed, see log");
-        }
-    }
+
+        egui::ScrollArea::vertical()
+            .id_salt(egui::Id::new("insight_scroll"))
+            .stick_to_bottom(app.insight_auto_update_feed)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                for (index, reply) in app.insight.replies.iter().enumerate() {
+                    if index > 0 {
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                    }
+                    ui.label(reply.as_str());
+                }
+            });
+    });
 }
 
 pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App) {

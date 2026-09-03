@@ -46,6 +46,8 @@ pub mod colors {
 
     /// Memory / Disk panel body text.
     pub const MEMORY_DISK_BODY: Color32 = Color32::from_rgb(180, 230, 80);
+    /// Insight panel body text.
+    pub const INSIGHT_BODY: Color32 = Color32::from_rgb(255, 160, 200);
     /// App Traffic panel body text.
     pub const APP_TRAFFIC_BODY: Color32 = Color32::from_rgb(200, 170, 255);
 
