@@ -23,6 +23,8 @@ pub mod colors {
 
     /// Text and widget foreground.
     pub const OFF_WHITE: Color32 = Color32::from_rgb(232, 232, 228);
+    /// Muted footer status text inside panel cards.
+    pub const FOOTER_TEXT: Color32 = Color32::from_rgb(140, 146, 156);
     /// Native window title bar fill (macOS fullsize content chrome).
     pub const TITLE_BAR: Color32 = Color32::from_rgb(48, 50, 54);
     /// Resize handle highlight (gap stays empty when idle).
@@ -455,4 +457,84 @@ pub fn panel_with_header_actions<R>(
             add_body(ui)
         })
         .inner
+}
+
+/// Like [`panel_with_header_actions`], with a bottom footer row reserved inside the card.
+pub fn panel_with_footer<R>(
+    ui: &mut Ui,
+    title: impl Into<egui::RichText>,
+    add_header_actions: impl FnOnce(&mut Ui),
+    add_body: impl FnOnce(&mut Ui) -> R,
+    add_footer: impl FnOnce(&mut Ui),
+) -> R {
+    // Same structure as `Frame::begin`/`end`, but always paint/allocate the tile-sized
+    // content rect. Overflowing body content must not push the bottom stroke outside the
+    // pane clip (that drops the bottom border).
+    let frame = panel_frame(ui);
+    let where_to_put_background = ui.painter().add(egui::Shape::Noop);
+    let outer_rect_bounds = ui.available_rect_before_wrap();
+    let mut content_rect = outer_rect_bounds - frame.total_margin();
+    content_rect.max.x = content_rect.max.x.max(content_rect.min.x);
+    content_rect.max.y = content_rect.max.y.max(content_rect.min.y);
+
+    let mut content_ui = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
+    content_ui.set_clip_rect(content_ui.clip_rect().intersect(content_rect));
+    content_ui.set_min_size(content_rect.size());
+
+    content_ui.horizontal(|ui| {
+        ui.heading(title);
+        add_header_actions(ui);
+    });
+    panel_separator(&mut content_ui);
+
+    let footer_height = panel_footer_height(&content_ui);
+    let body_height = (content_ui.available_height() - footer_height).max(0.0);
+    let result = content_ui
+        .allocate_ui(egui::vec2(content_ui.available_width(), body_height), |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
+            add_body(ui)
+        })
+        .inner;
+
+    add_footer(&mut content_ui);
+
+    let widget_rect = frame.widget_rect(content_rect);
+    if ui.is_rect_visible(widget_rect) {
+        ui.painter()
+            .set(where_to_put_background, frame.paint(content_rect));
+    }
+    ui.allocate_rect(frame.outer_rect(content_rect), egui::Sense::hover());
+
+    result
+}
+
+/// Vertical space reserved for [`panel_footer`].
+fn panel_footer_height(ui: &Ui) -> f32 {
+    let spacing = ui.spacing().item_spacing.y;
+    let text = ui.text_style_height(&TextStyle::Small);
+    spacing + text
+}
+
+/// Draws the panel footer bar: top hairline, then right-aligned muted status text.
+pub fn panel_footer(ui: &mut Ui) {
+    let height = panel_footer_height(ui);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::hover(),
+    );
+    if ui.is_rect_visible(rect) {
+        let spacing = ui.spacing().item_spacing.y;
+        ui.painter().hline(
+            rect.x_range(),
+            rect.top() + spacing * 0.5,
+            egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
+        );
+        ui.painter().text(
+            egui::pos2(rect.right(), rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            "Auto-scroll: on",
+            ui.style().text_styles[&TextStyle::Small].clone(),
+            colors::FOOTER_TEXT,
+        );
+    }
 }

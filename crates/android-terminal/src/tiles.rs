@@ -145,32 +145,38 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
             PanelId::LogcatAll => {
                 let mut show_timestamps = self.app.logcat_show_timestamps;
                 let mut line_spacing = self.app.logcat_line_spacing;
-                theme::panel_with_header_actions(
+                theme::panel_with_footer(
                     ui,
                     pane.title(),
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
                     |ui| panels::logcat_all(ui, self.app),
+                    theme::panel_footer,
                 );
                 self.app.logcat_show_timestamps = show_timestamps;
                 self.app.logcat_line_spacing = line_spacing;
             }
             PanelId::Insight => {
-                theme::panel(ui, pane.title(), |ui| {
-                    panels::insight(ui, self.app);
-                });
+                theme::panel_with_footer(
+                    ui,
+                    pane.title(),
+                    |_| {},
+                    |ui| panels::insight(ui, self.app),
+                    theme::panel_footer,
+                );
             }
             PanelId::LogcatErrors => {
                 let mut show_timestamps = self.app.error_show_timestamps;
                 let mut line_spacing = self.app.error_line_spacing;
-                theme::panel_with_header_actions(
+                theme::panel_with_footer(
                     ui,
                     pane.title(),
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
                     |ui| panels::logcat_errors(ui, self.app),
+                    theme::panel_footer,
                 );
                 self.app.error_show_timestamps = show_timestamps;
                 self.app.error_line_spacing = line_spacing;
