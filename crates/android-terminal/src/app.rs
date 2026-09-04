@@ -53,7 +53,9 @@ pub struct App {
     pub storage_gauge: Option<StorageOverview>,
     pub storage_gauge_error: Option<String>,
     pub log_lines: VecDeque<CachedLogLine>,
+    pub pending_log_lines: VecDeque<CachedLogLine>,
     pub error_lines: VecDeque<CachedLogLine>,
+    pub pending_error_lines: VecDeque<CachedLogLine>,
     pub logcat_error: Option<String>,
     pub error_logcat_error: Option<String>,
     pub auto_update_feed: bool,
@@ -198,7 +200,9 @@ impl App {
             storage_gauge: None,
             storage_gauge_error: None,
             log_lines: VecDeque::new(),
+            pending_log_lines: VecDeque::new(),
             error_lines: VecDeque::new(),
+            pending_error_lines: VecDeque::new(),
             logcat_error: None,
             error_logcat_error: None,
             auto_update_feed: true,
@@ -613,32 +617,70 @@ impl App {
 
     fn drain_logcat(&mut self) -> bool {
         let entries = take_log_entries(self.logcat_rx.as_ref());
-        if entries.is_empty() {
-            return false;
+        
+        if self.auto_update_feed {
+            let mut updated = false;
+            if !self.pending_log_lines.is_empty() {
+                self.log_lines.extend(self.pending_log_lines.drain(..));
+                trim_buffer(&mut self.log_lines);
+                updated = true;
+            }
+            if !entries.is_empty() {
+                for entry in entries {
+                    self.log_lines.push_back(CachedLogLine::from_entry(&entry));
+                }
+                trim_buffer(&mut self.log_lines);
+                updated = true;
+            }
+            updated
+        } else {
+            if !entries.is_empty() {
+                for entry in entries {
+                    self.pending_log_lines.push_back(CachedLogLine::from_entry(&entry));
+                }
+                trim_buffer(&mut self.pending_log_lines);
+            }
+            // Even though we received logs, we didn't update the visible lines.
+            false 
         }
-        for entry in entries {
-            self.log_lines.push_back(CachedLogLine::from_entry(&entry));
-            trim_buffer(&mut self.log_lines);
-        }
-        true
     }
 
     fn drain_error_logcat(&mut self) -> bool {
         let entries = take_log_entries(self.error_logcat_rx.as_ref());
-        if entries.is_empty() {
-            return false;
-        }
-        let mut updated = false;
-        for entry in entries {
-            if entry.is_error_level() {
-                self.error_lines
-                    .push_back(CachedLogLine::from_entry(&entry));
+        
+        if self.error_auto_update_feed {
+            let mut updated = false;
+            if !self.pending_error_lines.is_empty() {
+                self.error_lines.extend(self.pending_error_lines.drain(..));
                 trim_buffer(&mut self.error_lines);
                 self.insight.last_error_at = Some(Instant::now());
                 updated = true;
             }
+            if !entries.is_empty() {
+                for entry in entries {
+                    if entry.is_error_level() {
+                        self.error_lines.push_back(CachedLogLine::from_entry(&entry));
+                        self.insight.last_error_at = Some(Instant::now());
+                        updated = true;
+                    }
+                }
+                if updated {
+                    trim_buffer(&mut self.error_lines);
+                }
+            }
+            updated
+        } else {
+            if !entries.is_empty() {
+                for entry in entries {
+                    if entry.is_error_level() {
+                        self.pending_error_lines.push_back(CachedLogLine::from_entry(&entry));
+                        self.insight.last_error_at = Some(Instant::now());
+                    }
+                }
+                trim_buffer(&mut self.pending_error_lines);
+            }
+            false
         }
-        updated
     }
 
     fn drain_network(&mut self) -> bool {

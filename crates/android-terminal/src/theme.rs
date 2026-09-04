@@ -538,9 +538,9 @@ pub fn panel_footer(ui: &mut Ui, auto_scroll: &mut bool) {
     );
 
     let label = if *auto_scroll {
-        "Auto-scroll: on"
+        "Active"
     } else {
-        "Auto-scroll: off"
+        "Paused"
     };
 
     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| {
@@ -550,12 +550,12 @@ pub fn panel_footer(ui: &mut Ui, auto_scroll: &mut bool) {
                     egui::Label::new(
                         egui::RichText::new(label)
                             .small()
-                            .color(colors::FOOTER_TEXT),
+                            .color(if *auto_scroll { colors::FOOTER_TEXT } else { egui::Color32::from_rgb(255, 100, 100) }),
                     )
                     .sense(egui::Sense::click()),
                 )
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_text("Toggle auto-scroll");
+                .on_hover_text("Toggle logcat updates");
             if response.clicked() {
                 *auto_scroll = !*auto_scroll;
             }
