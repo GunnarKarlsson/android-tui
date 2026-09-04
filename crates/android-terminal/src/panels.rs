@@ -763,14 +763,7 @@ fn show_log_scroll(
                     LogScrollStyle::ByLevel => log_level_color(line.level),
                 };
                 let text = line.display(show_timestamps);
-                if line_spacing {
-                    let spaced = format!("{text}\n\n");
-                    if let Some(tag_filters) = tag_filters {
-                        ui.label(build_highlight_job(ui, &spaced, color, tag_filters));
-                    } else {
-                        ui.colored_label(color, spaced);
-                    }
-                } else if let Some(tag_filters) = tag_filters {
+                if let Some(tag_filters) = tag_filters {
                     ui.label(build_highlight_job(ui, text, color, tag_filters));
                 } else {
                     ui.colored_label(color, text);
