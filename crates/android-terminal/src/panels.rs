@@ -4,6 +4,10 @@ use adb_client::{NetworkStats, ProtocolStats, StorageCategory, StorageOverview};
 use eframe::egui;
 
 use crate::app::{App, AppStorageState, CachedLogLine, InsightStatus, LogcatTagFilter};
+use crate::format::{
+    format_bytes, format_bytes_mb, format_gb_from_bytes, format_gb_from_kb, format_rate_mb,
+    truncate_package_name,
+};
 use crate::theme;
 use crate::ui_elements;
 
@@ -385,14 +389,6 @@ fn arc_points(
         .collect()
 }
 
-fn format_gb_from_kb(kb: u64) -> String {
-    format!("{:.1} GB", kb as f64 / 1_048_576.0)
-}
-
-fn format_gb_from_bytes(bytes: u64) -> String {
-    format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
-}
-
 pub fn network_panel(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.network_error {
         ui_elements::error_label(ui, error);
@@ -593,55 +589,6 @@ pub fn network_rows_from_stats(stats: &NetworkStats) -> Vec<NetworkRow> {
             rate: format_rate_mb(iface.rx_rate_bps, iface.tx_rate_bps),
         })
         .collect()
-}
-
-fn truncate_package_name(name: &str) -> String {
-    const MAX_LEN: usize = 42;
-    if name.len() <= MAX_LEN {
-        return name.to_string();
-    }
-    format!("{}...", &name[..MAX_LEN - 3])
-}
-
-fn format_bytes_mb(bytes: u64) -> String {
-    if bytes >= 1_073_741_824 {
-        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
-    } else {
-        format!("{:.2} MB", bytes as f64 / 1_048_576.0)
-    }
-}
-
-fn format_rate_mb(rx_bps: f64, tx_bps: f64) -> String {
-    format!(
-        "↓ {}  ↑ {}",
-        format_throughput(rx_bps),
-        format_throughput(tx_bps)
-    )
-}
-
-fn format_throughput(bps: f64) -> String {
-    if bps < 0.0 {
-        return "—".to_string();
-    }
-    if bps >= 1_048_576.0 {
-        format!("{:.2} MB/s", bps / 1_048_576.0)
-    } else if bps >= 1024.0 {
-        format!("{:.1} KB/s", bps / 1024.0)
-    } else {
-        format!("{:.0} B/s", bps)
-    }
-}
-
-fn format_bytes(bytes: u64) -> String {
-    if bytes >= 1_073_741_824 {
-        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
-    } else if bytes >= 1_048_576 {
-        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
-    } else if bytes >= 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{bytes} B")
-    }
 }
 
 enum LogScrollStyle {

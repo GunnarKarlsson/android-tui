@@ -1,4 +1,5 @@
 mod app;
+mod format;
 mod layout;
 mod panels;
 mod theme;
