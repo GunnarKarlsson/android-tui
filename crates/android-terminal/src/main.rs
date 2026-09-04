@@ -1,18 +1,18 @@
 mod app;
+mod layout;
 mod panels;
 mod theme;
-mod tiles;
 mod ui_elements;
 
 use adb_client::{Adb, DeviceInfo};
 use egui_tiles::Tree;
 
 use crate::app::App;
-use crate::tiles::PanelId;
+use crate::layout::PanelId;
 
 struct TerminalApp {
     inner: App,
-    tile_tree: Tree<PanelId>,
+    layout_tree: Tree<PanelId>,
 }
 
 impl TerminalApp {
@@ -23,7 +23,7 @@ impl TerminalApp {
     ) -> Self {
         Self {
             inner: App::new(adb_error, devices, list_error),
-            tile_tree: tiles::create_default_tree(),
+            layout_tree: layout::create_default_tree(),
         }
     }
 }
@@ -39,7 +39,7 @@ impl eframe::App for TerminalApp {
             .frame(ui_elements::shell_frame(ctx))
             .show(ctx, |ui| {
                 ui_elements::canvas_margin_frame().show(ui, |ui| {
-                    tiles::show(ui, &mut self.tile_tree, &mut self.inner);
+                    layout::show(ui, &mut self.layout_tree, &mut self.inner);
                 });
             });
     }
