@@ -1,53 +1,11 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use adb_client::{NetworkStats, ProtocolStats, StorageCategory, StorageOverview};
 use eframe::egui;
 
-use crate::app::{App, CachedLogLine, InsightStatus, LogcatTagFilter};
+use crate::app::{App, AppStorageState, CachedLogLine, InsightStatus, LogcatTagFilter};
 use crate::theme;
 use crate::ui_elements;
-
-#[derive(Default)]
-pub struct AppStorageState {
-    pub packages: Vec<String>,
-    pub sizes: HashMap<String, u64>,
-    pub scanning: bool,
-    pub error: Option<String>,
-}
-
-impl AppStorageState {
-    pub fn set_packages(&mut self, packages: Vec<String>) {
-        self.packages = packages;
-        self.sizes.clear();
-        self.scanning = true;
-    }
-
-    pub fn merge_packages(&mut self, packages: Vec<String>) {
-        self.packages = packages;
-        self.sizes
-            .retain(|package, _| self.packages.iter().any(|pkg| pkg == package));
-        self.scanning = true;
-    }
-
-    pub fn set_size(&mut self, package: &str, bytes: u64) {
-        self.sizes.insert(package.to_string(), bytes);
-    }
-
-    pub fn sorted_rows(&self) -> Vec<(&str, Option<u64>)> {
-        let mut rows: Vec<(&str, Option<u64>)> = self
-            .packages
-            .iter()
-            .map(|pkg| (pkg.as_str(), self.sizes.get(pkg).copied()))
-            .collect();
-        rows.sort_by(|a, b| match (a.1, b.1) {
-            (Some(left), Some(right)) => right.cmp(&left),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.0.cmp(b.0),
-        });
-        rows
-    }
-}
 
 pub fn logcat_all_panel(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     ui_elements::filter_row(ui, |ui| {

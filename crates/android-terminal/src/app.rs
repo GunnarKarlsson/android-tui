@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use adb_client::{
@@ -11,7 +11,6 @@ use ai_insight::{build_snapshot, spawn_insight, InsightLine, InsightUpdate, Leve
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
-use crate::panels;
 use crate::theme;
 use crate::ui_elements;
 
@@ -40,7 +39,7 @@ pub struct App {
     pub protocol_error: Option<String>,
     pub app_storage_rx: Option<Receiver<AppStorageUpdate>>,
     pub app_storage_poller: Option<AppStoragePoller>,
-    pub app_storage: panels::AppStorageState,
+    pub app_storage: AppStorageState,
     pub storage_breakdown_rx: Option<Receiver<StorageBreakdownUpdate>>,
     pub storage_breakdown_poller: Option<StorageBreakdownPoller>,
     pub storage_breakdown: Option<StorageBreakdown>,
@@ -103,6 +102,48 @@ impl Default for InsightState {
             ever_succeeded: false,
             generation: 0,
         }
+    }
+}
+
+#[derive(Default)]
+pub struct AppStorageState {
+    pub packages: Vec<String>,
+    pub sizes: HashMap<String, u64>,
+    pub scanning: bool,
+    pub error: Option<String>,
+}
+
+impl AppStorageState {
+    pub fn set_packages(&mut self, packages: Vec<String>) {
+        self.packages = packages;
+        self.sizes.clear();
+        self.scanning = true;
+    }
+
+    pub fn merge_packages(&mut self, packages: Vec<String>) {
+        self.packages = packages;
+        self.sizes
+            .retain(|package, _| self.packages.iter().any(|pkg| pkg == package));
+        self.scanning = true;
+    }
+
+    pub fn set_size(&mut self, package: &str, bytes: u64) {
+        self.sizes.insert(package.to_string(), bytes);
+    }
+
+    pub fn sorted_rows(&self) -> Vec<(&str, Option<u64>)> {
+        let mut rows: Vec<(&str, Option<u64>)> = self
+            .packages
+            .iter()
+            .map(|pkg| (pkg.as_str(), self.sizes.get(pkg).copied()))
+            .collect();
+        rows.sort_by(|a, b| match (a.1, b.1) {
+            (Some(left), Some(right)) => right.cmp(&left),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.0.cmp(b.0),
+        });
+        rows
     }
 }
 
@@ -187,7 +228,7 @@ impl App {
             protocol_error: None,
             app_storage_rx: None,
             app_storage_poller: None,
-            app_storage: panels::AppStorageState::default(),
+            app_storage: AppStorageState::default(),
             storage_breakdown_rx: None,
             storage_breakdown_poller: None,
             storage_breakdown: None,
@@ -384,7 +425,7 @@ impl App {
         self.network_error = None;
         self.protocol_stats = None;
         self.protocol_error = None;
-        self.app_storage = panels::AppStorageState::default();
+        self.app_storage = AppStorageState::default();
         self.storage_breakdown = None;
         self.storage_breakdown_error = None;
         self.ram_memory = None;
