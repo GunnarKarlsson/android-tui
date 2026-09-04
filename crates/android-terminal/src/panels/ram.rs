@@ -8,27 +8,25 @@ use crate::ui_elements;
 use super::donut::show_usage_donut;
 
 pub fn ram_gauge_panel(ui: &mut egui::Ui, app: &App) {
-    ui_elements::panel(ui, "RAM", |ui| {
-        if app.selected_serial.is_none() {
+    if app.selected_serial.is_none() {
+        ui_elements::panel_loading(ui);
+        return;
+    }
+
+    if let Some(error) = &app.ram_error {
+        ui_elements::error_label(ui, error);
+    }
+
+    let Some(memory) = &app.ram_memory else {
+        if app.ram_rx.is_some() {
             ui_elements::panel_loading(ui);
-            return;
+        } else {
+            ui_elements::panel_loading(ui);
         }
+        return;
+    };
 
-        if let Some(error) = &app.ram_error {
-            ui_elements::error_label(ui, error);
-        }
-
-        let Some(memory) = &app.ram_memory else {
-            if app.ram_rx.is_some() {
-                ui_elements::panel_loading(ui);
-            } else {
-                ui_elements::panel_loading(ui);
-            }
-            return;
-        };
-
-        show_ram_donut(ui, memory);
-    });
+    show_ram_donut(ui, memory);
 }
 
 fn show_ram_donut(ui: &mut egui::Ui, memory: &adb_client::MemoryStats) {

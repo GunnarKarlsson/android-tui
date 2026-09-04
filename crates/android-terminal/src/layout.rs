@@ -135,13 +135,17 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
     fn pane_ui(&mut self, ui: &mut egui::Ui, _tile_id: TileId, pane: &mut PanelId) -> UiResponse {
         match pane {
             PanelId::Devices => {
-                panels::devices_panel(ui, self.app);
+                panels::devices::devices_panel(ui, self.app);
             }
             PanelId::Ram => {
-                panels::ram_gauge_panel(ui, self.app);
+                ui_elements::panel(ui, pane.title(), |ui| {
+                    panels::ram::ram_gauge_panel(ui, self.app)
+                });
             }
             PanelId::Storage => {
-                panels::storage_gauge_panel(ui, self.app);
+                ui_elements::panel(ui, pane.title(), |ui| {
+                    panels::storage::storage_gauge_panel(ui, self.app)
+                });
             }
             PanelId::LogcatAll => {
                 let mut show_timestamps = self.app.logcat_show_timestamps;
@@ -153,7 +157,9 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
-                    |ui, auto_scroll| panels::logcat_all_panel(ui, self.app, auto_scroll),
+                    |ui, auto_scroll| {
+                        panels::logcat::logcat_all_panel(ui, self.app, auto_scroll)
+                    },
                     &mut auto_scroll,
                 );
                 self.app.logcat_show_timestamps = show_timestamps;
@@ -166,7 +172,9 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                     ui,
                     pane.title(),
                     |_| {},
-                    |ui, auto_scroll| panels::insight_panel(ui, self.app, auto_scroll),
+                    |ui, auto_scroll| {
+                        panels::insight::insight_panel(ui, self.app, auto_scroll)
+                    },
                     &mut auto_scroll,
                 );
                 self.app.insight_auto_update_feed = auto_scroll;
@@ -181,7 +189,9 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
-                    |ui, auto_scroll| panels::logcat_errors_panel(ui, self.app, auto_scroll),
+                    |ui, auto_scroll| {
+                        panels::logcat::logcat_errors_panel(ui, self.app, auto_scroll)
+                    },
                     &mut auto_scroll,
                 );
                 self.app.error_show_timestamps = show_timestamps;
@@ -189,13 +199,19 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 self.app.error_auto_update_feed = auto_scroll;
             }
             PanelId::SystemStats => {
-                ui_elements::panel(ui, pane.title(), |ui| panels::storage_usage_panel(ui, self.app));
+                ui_elements::panel(ui, pane.title(), |ui| {
+                    panels::storage::storage_usage_panel(ui, self.app)
+                });
             }
             PanelId::Network => {
-                ui_elements::panel(ui, pane.title(), |ui| panels::network_panel(ui, self.app));
+                ui_elements::panel(ui, pane.title(), |ui| {
+                    panels::network::network_panel(ui, self.app)
+                });
             }
             PanelId::Protocols => {
-                ui_elements::panel(ui, pane.title(), |ui| panels::protocols_panel(ui, self.app));
+                ui_elements::panel(ui, pane.title(), |ui| {
+                    panels::traffic::protocols_panel(ui, self.app)
+                });
             }
         }
 

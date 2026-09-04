@@ -41,27 +41,25 @@ pub fn storage_usage_panel(ui: &mut egui::Ui, app: &App) {
 }
 
 pub fn storage_gauge_panel(ui: &mut egui::Ui, app: &App) {
-    ui_elements::panel(ui, "Storage", |ui| {
-        if app.selected_serial.is_none() {
+    if app.selected_serial.is_none() {
+        ui_elements::panel_loading(ui);
+        return;
+    }
+
+    if let Some(error) = &app.storage_gauge_error {
+        ui_elements::error_label(ui, error);
+    }
+
+    let Some(overview) = &app.storage_gauge else {
+        if app.storage_gauge_rx.is_some() {
             ui_elements::panel_loading(ui);
-            return;
+        } else {
+            ui_elements::panel_loading(ui);
         }
+        return;
+    };
 
-        if let Some(error) = &app.storage_gauge_error {
-            ui_elements::error_label(ui, error);
-        }
-
-        let Some(overview) = &app.storage_gauge else {
-            if app.storage_gauge_rx.is_some() {
-                ui_elements::panel_loading(ui);
-            } else {
-                ui_elements::panel_loading(ui);
-            }
-            return;
-        };
-
-        show_storage_donut(ui, overview);
-    });
+    show_storage_donut(ui, overview);
 }
 
 fn show_storage_donut(ui: &mut egui::Ui, overview: &StorageOverview) {
