@@ -13,6 +13,7 @@ use eframe::egui;
 
 use crate::panels;
 use crate::theme;
+use crate::ui_elements;
 
 pub const MAX_LOG_LINES: usize = 10_000;
 const MAX_DRAIN_PER_FRAME: usize = 500;
@@ -243,7 +244,7 @@ impl App {
 
         self.logcat_tag_filters.push(LogcatTagFilter {
             tag: tag.clone(),
-            color_index: theme::tag_color_index(&tag),
+            color_index: ui_elements::tag_color_index(&tag),
         });
         self.logcat_tag_input.clear();
     }
@@ -868,11 +869,11 @@ impl App {
 
     pub fn show_devices(&mut self, ui: &mut egui::Ui) {
         let mut refresh = false;
-        theme::panel_with_header_actions(
+        ui_elements::panel_with_header_actions(
             ui,
             "Devices",
             |ui| {
-                refresh = theme::icon_button(ui, theme::icons::REFRESH).clicked();
+                refresh = ui_elements::icon_button(ui, theme::icons::REFRESH).clicked();
             },
             |ui| {
                 self.show_devices_body(ui);
@@ -885,13 +886,13 @@ impl App {
 
     fn show_devices_body(&mut self, ui: &mut egui::Ui) {
         if let Some(error) = &self.adb_error {
-            theme::error_label(ui, "ADB not available");
+            ui_elements::error_label(ui, "ADB not available");
             ui.label(error);
             return;
         }
 
         if let Some(error) = &self.list_error {
-            theme::error_label(ui, error);
+            ui_elements::error_label(ui, error);
         }
 
         if self.devices.is_empty() {

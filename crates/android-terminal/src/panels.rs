@@ -5,6 +5,7 @@ use eframe::egui;
 
 use crate::app::{App, CachedLogLine, InsightStatus, LogcatTagFilter};
 use crate::theme;
+use crate::ui_elements;
 
 #[derive(Default)]
 pub struct AppStorageState {
@@ -48,8 +49,8 @@ impl AppStorageState {
     }
 }
 
-pub fn logcat_all(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
-    theme::filter_row(ui, |ui| {
+pub fn logcat_all_panel(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
+    ui_elements::filter_row(ui, |ui| {
         ui.label("Filter:");
         ui.add(
             egui::TextEdit::singleline(&mut app.logcat_filter)
@@ -59,7 +60,7 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
         .on_hover_text("Filter log lines by text");
     });
 
-    theme::filter_row(ui, |ui| {
+    ui_elements::filter_row(ui, |ui| {
         ui.label("Tag:");
         let response = ui
             .add(
@@ -76,22 +77,22 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     });
 
     let mut remove_tag_index = None;
-    theme::tag_filter_row(ui, &app.logcat_tag_filters, &mut remove_tag_index);
+    ui_elements::tag_filter_row(ui, &app.logcat_tag_filters, &mut remove_tag_index);
     if let Some(index) = remove_tag_index {
         app.remove_logcat_tag(index);
     }
 
     if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
+        ui_elements::panel_loading(ui);
         return;
     }
 
     if let Some(error) = &app.logcat_error {
-        theme::error_label(ui, error);
+        ui_elements::error_label(ui, error);
     }
 
     if app.logcat_rx.is_none() {
-        theme::panel_loading(ui);
+        ui_elements::panel_loading(ui);
         return;
     }
 
@@ -118,17 +119,17 @@ pub fn logcat_all(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     );
 }
 
-pub fn insight(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
+pub fn insight_panel(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
+        ui_elements::panel_loading(ui);
         return;
     }
 
-    theme::panel_body(ui, theme::colors::INSIGHT_BODY, |ui| {
+    ui_elements::panel_body(ui, theme::colors::INSIGHT_BODY, |ui| {
         if app.insight.replies.is_empty() {
             match app.insight.status {
                 InsightStatus::RequestFailed => {
-                    theme::error_label(ui, "request failed, see log");
+                    ui_elements::error_label(ui, "request failed, see log");
                 }
                 InsightStatus::Idle | InsightStatus::RequestSent => {
                     ui.label("...");
@@ -155,8 +156,8 @@ pub fn insight(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     });
 }
 
-pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
-    theme::filter_row(ui, |ui| {
+pub fn logcat_errors_panel(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
+    ui_elements::filter_row(ui, |ui| {
         ui.label("Filter:");
         ui.add(
             egui::TextEdit::singleline(&mut app.error_logcat_filter)
@@ -167,16 +168,16 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     });
 
     if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
+        ui_elements::panel_loading(ui);
         return;
     }
 
     if let Some(error) = &app.error_logcat_error {
-        theme::error_label(ui, error);
+        ui_elements::error_label(ui, error);
     }
 
     if app.error_logcat_rx.is_none() {
-        theme::panel_loading(ui);
+        ui_elements::panel_loading(ui);
         return;
     }
 
@@ -201,17 +202,17 @@ pub fn logcat_errors(ui: &mut egui::Ui, app: &mut App, auto_scroll: bool) {
     );
 }
 
-pub fn storage_usage(ui: &mut egui::Ui, app: &App) {
+pub fn storage_usage_panel(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.storage_breakdown_error {
-        theme::error_label(ui, error);
+        ui_elements::error_label(ui, error);
     }
     if let Some(error) = &app.app_storage.error {
-        theme::error_label(ui, error);
+        ui_elements::error_label(ui, error);
     }
 
-    theme::panel_body(ui, theme::colors::MEMORY_DISK_BODY, |ui| {
+    ui_elements::panel_body(ui, theme::colors::MEMORY_DISK_BODY, |ui| {
         if app.selected_serial.is_none() {
-            theme::panel_loading(ui);
+            ui_elements::panel_loading(ui);
             return;
         }
 
@@ -231,22 +232,22 @@ pub fn storage_usage(ui: &mut egui::Ui, app: &App) {
     });
 }
 
-pub fn ram_gauge(ui: &mut egui::Ui, app: &App) {
-    theme::panel(ui, "RAM", |ui| {
+pub fn ram_gauge_panel(ui: &mut egui::Ui, app: &App) {
+    ui_elements::panel(ui, "RAM", |ui| {
         if app.selected_serial.is_none() {
-            theme::panel_loading(ui);
+            ui_elements::panel_loading(ui);
             return;
         }
 
         if let Some(error) = &app.ram_error {
-            theme::error_label(ui, error);
+            ui_elements::error_label(ui, error);
         }
 
         let Some(memory) = &app.ram_memory else {
             if app.ram_rx.is_some() {
-                theme::panel_loading(ui);
+                ui_elements::panel_loading(ui);
             } else {
-                theme::panel_loading(ui);
+                ui_elements::panel_loading(ui);
             }
             return;
         };
@@ -255,22 +256,22 @@ pub fn ram_gauge(ui: &mut egui::Ui, app: &App) {
     });
 }
 
-pub fn storage_gauge(ui: &mut egui::Ui, app: &App) {
-    theme::panel(ui, "Storage", |ui| {
+pub fn storage_gauge_panel(ui: &mut egui::Ui, app: &App) {
+    ui_elements::panel(ui, "Storage", |ui| {
         if app.selected_serial.is_none() {
-            theme::panel_loading(ui);
+            ui_elements::panel_loading(ui);
             return;
         }
 
         if let Some(error) = &app.storage_gauge_error {
-            theme::error_label(ui, error);
+            ui_elements::error_label(ui, error);
         }
 
         let Some(overview) = &app.storage_gauge else {
             if app.storage_gauge_rx.is_some() {
-                theme::panel_loading(ui);
+                ui_elements::panel_loading(ui);
             } else {
-                theme::panel_loading(ui);
+                ui_elements::panel_loading(ui);
             }
             return;
         };
@@ -434,13 +435,13 @@ fn format_gb_from_bytes(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
 }
 
-pub fn network(ui: &mut egui::Ui, app: &App) {
+pub fn network_panel(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.network_error {
-        theme::error_label(ui, error);
+        ui_elements::error_label(ui, error);
     }
 
     if app.selected_serial.is_none() {
-        theme::panel_loading(ui);
+        ui_elements::panel_loading(ui);
         return;
     }
 
@@ -448,7 +449,7 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
         if app.network_rx.is_some() {
             ui.label("Fetching network stats…");
         } else {
-            theme::panel_loading(ui);
+            ui_elements::panel_loading(ui);
         }
         return;
     };
@@ -462,14 +463,14 @@ pub fn network(ui: &mut egui::Ui, app: &App) {
     show_network_table(ui, &rows);
 }
 
-pub fn protocols(ui: &mut egui::Ui, app: &App) {
+pub fn protocols_panel(ui: &mut egui::Ui, app: &App) {
     if let Some(error) = &app.protocol_error {
-        theme::error_label(ui, error);
+        ui_elements::error_label(ui, error);
     }
 
-    theme::panel_body(ui, theme::colors::APP_TRAFFIC_BODY, |ui| {
+    ui_elements::panel_body(ui, theme::colors::APP_TRAFFIC_BODY, |ui| {
         if app.selected_serial.is_none() {
-            theme::panel_loading(ui);
+            ui_elements::panel_loading(ui);
             return;
         }
 
@@ -477,7 +478,7 @@ pub fn protocols(ui: &mut egui::Ui, app: &App) {
             if app.protocol_rx.is_some() {
                 ui.label("Fetching app traffic…");
             } else {
-                theme::panel_loading(ui);
+                ui_elements::panel_loading(ui);
             }
             return;
         };

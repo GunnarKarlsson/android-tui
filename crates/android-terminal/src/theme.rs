@@ -216,12 +216,3 @@ fn install_fonts(ctx: &Context) {
 
     ctx.set_fonts(fonts);
 }
-
-pub use crate::ui_elements::{
-    canvas_margin_frame, error_label, filter_row, icon_button, icon_toggle, panel, panel_body,
-    panel_loading, panel_with_footer, panel_with_header_actions, shell_frame, tag_color_index,
-    tag_filter_row,
-};
-
-#[cfg(target_os = "macos")]
-pub use crate::ui_elements::title_bar;

@@ -33,12 +33,12 @@ impl eframe::App for TerminalApp {
         self.inner.update_panels(ctx);
 
         #[cfg(target_os = "macos")]
-        theme::title_bar(ctx);
+        ui_elements::title_bar(ctx);
 
         eframe::egui::CentralPanel::default()
-            .frame(theme::shell_frame(ctx))
+            .frame(ui_elements::shell_frame(ctx))
             .show(ctx, |ui| {
-                theme::canvas_margin_frame().show(ui, |ui| {
+                ui_elements::canvas_margin_frame().show(ui, |ui| {
                     tiles::show(ui, &mut self.tile_tree, &mut self.inner);
                 });
             });

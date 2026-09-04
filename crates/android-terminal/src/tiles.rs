@@ -4,6 +4,7 @@ use egui_tiles::{Behavior, ResizeState, TileId, Tree, UiResponse};
 use crate::app::App;
 use crate::panels;
 use crate::theme;
+use crate::ui_elements;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelId {
@@ -137,22 +138,22 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 self.app.show_devices(ui);
             }
             PanelId::Ram => {
-                panels::ram_gauge(ui, self.app);
+                panels::ram_gauge_panel(ui, self.app);
             }
             PanelId::Storage => {
-                panels::storage_gauge(ui, self.app);
+                panels::storage_gauge_panel(ui, self.app);
             }
             PanelId::LogcatAll => {
                 let mut show_timestamps = self.app.logcat_show_timestamps;
                 let mut line_spacing = self.app.logcat_line_spacing;
                 let mut auto_scroll = self.app.auto_update_feed;
-                theme::panel_with_footer(
+                ui_elements::panel_with_footer(
                     ui,
                     pane.title(),
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
-                    |ui, auto_scroll| panels::logcat_all(ui, self.app, auto_scroll),
+                    |ui, auto_scroll| panels::logcat_all_panel(ui, self.app, auto_scroll),
                     &mut auto_scroll,
                 );
                 self.app.logcat_show_timestamps = show_timestamps;
@@ -161,11 +162,11 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
             }
             PanelId::Insight => {
                 let mut auto_scroll = self.app.insight_auto_update_feed;
-                theme::panel_with_footer(
+                ui_elements::panel_with_footer(
                     ui,
                     pane.title(),
                     |_| {},
-                    |ui, auto_scroll| panels::insight(ui, self.app, auto_scroll),
+                    |ui, auto_scroll| panels::insight_panel(ui, self.app, auto_scroll),
                     &mut auto_scroll,
                 );
                 self.app.insight_auto_update_feed = auto_scroll;
@@ -174,13 +175,13 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 let mut show_timestamps = self.app.error_show_timestamps;
                 let mut line_spacing = self.app.error_line_spacing;
                 let mut auto_scroll = self.app.error_auto_update_feed;
-                theme::panel_with_footer(
+                ui_elements::panel_with_footer(
                     ui,
                     pane.title(),
                     |ui| {
                         logcat_header_toggles(ui, &mut show_timestamps, &mut line_spacing);
                     },
-                    |ui, auto_scroll| panels::logcat_errors(ui, self.app, auto_scroll),
+                    |ui, auto_scroll| panels::logcat_errors_panel(ui, self.app, auto_scroll),
                     &mut auto_scroll,
                 );
                 self.app.error_show_timestamps = show_timestamps;
@@ -188,13 +189,13 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
                 self.app.error_auto_update_feed = auto_scroll;
             }
             PanelId::SystemStats => {
-                theme::panel(ui, pane.title(), |ui| panels::storage_usage(ui, self.app));
+                ui_elements::panel(ui, pane.title(), |ui| panels::storage_usage_panel(ui, self.app));
             }
             PanelId::Network => {
-                theme::panel(ui, pane.title(), |ui| panels::network(ui, self.app));
+                ui_elements::panel(ui, pane.title(), |ui| panels::network_panel(ui, self.app));
             }
             PanelId::Protocols => {
-                theme::panel(ui, pane.title(), |ui| panels::protocols(ui, self.app));
+                ui_elements::panel(ui, pane.title(), |ui| panels::protocols_panel(ui, self.app));
             }
         }
 
@@ -203,10 +204,10 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
 }
 
 fn logcat_header_toggles(ui: &mut egui::Ui, show_timestamps: &mut bool, line_spacing: &mut bool) {
-    if theme::icon_toggle(ui, theme::icons::CLOCK, *show_timestamps).clicked() {
+    if ui_elements::icon_toggle(ui, theme::icons::CLOCK, *show_timestamps).clicked() {
         *show_timestamps = !*show_timestamps;
     }
-    if theme::icon_toggle(ui, theme::icons::LINE_SPACING, *line_spacing).clicked() {
+    if ui_elements::icon_toggle(ui, theme::icons::LINE_SPACING, *line_spacing).clicked() {
         *line_spacing = !*line_spacing;
     }
 }
