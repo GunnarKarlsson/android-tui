@@ -41,26 +41,17 @@ impl LogEntry {
     pub fn format_line_with_timestamp(&self, show_timestamp: bool) -> String {
         let is_continuation = self.timestamp.is_empty() && self.tag.is_empty();
         
-        let suffix = if is_continuation {
-            format!("  {}", self.message)
-        } else {
-            format!("{} {}: {}", self.level, self.tag, self.message)
-        };
+        if is_continuation {
+            return self.message.clone();
+        }
+
+        let suffix = format!("{} {}: {}", self.level, self.tag, self.message);
         
         if show_timestamp {
-            let body = if is_continuation {
-                format!("{:>13} {}", "", suffix)
-            } else {
-                format!("{:>5} {:>5} {}", self.pid, self.tid, suffix)
-            };
+            let body = format!("{:>5} {:>5} {}", self.pid, self.tid, suffix);
             
             if self.timestamp.is_empty() {
-                if is_continuation {
-                    // Match the 18-character width of the timestamp (e.g. "03-15 10:23:45.123")
-                    format!("{:>18} {}", "", body)
-                } else {
-                    body
-                }
+                body
             } else {
                 format!("{} {}", self.timestamp, body)
             }
@@ -330,7 +321,8 @@ fn parse_logcat_line(line: &str) -> Vec<LogEntry> {
                 .unwrap_or_default(),
             " ",
         )
-        .into_owned();
+        .trim()
+        .to_string();
 
     let timestamp = captures.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
     let level = captures.get(4).and_then(|m| m.as_str().chars().next()).unwrap_or('I');
