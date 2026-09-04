@@ -160,7 +160,7 @@ fn apply_shared_style(style: &mut egui::Style) {
     );
     style
         .text_styles
-        .insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
+        .insert(TextStyle::Body, FontId::new(13.0, FontFamily::Proportional));
     style.text_styles.insert(
         TextStyle::Button,
         FontId::new(14.0, FontFamily::Proportional),
