@@ -764,9 +764,18 @@ fn show_log_scroll(
                 };
                 let text = line.display(show_timestamps);
                 if let Some(tag_filters) = tag_filters {
-                    ui.label(build_highlight_job(ui, text, color, tag_filters));
+                    let mut job = build_highlight_job(ui, text, color, tag_filters);
+                    job.wrap = egui::text::TextWrapping {
+                        max_rows: 1,
+                        break_anywhere: true,
+                        max_width: f32::INFINITY,
+                        overflow_character: None,
+                    };
+                    ui.label(job);
                 } else {
-                    ui.colored_label(color, text);
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(text).color(color)).wrap_mode(egui::TextWrapMode::Extend),
+                    );
                 }
             }
         });

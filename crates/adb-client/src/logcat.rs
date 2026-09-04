@@ -11,6 +11,10 @@ use regex::Regex;
 use crate::background::signal_stop_and_detach;
 use crate::error::AdbError;
 
+static MULTIPLE_SPACES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\s+").expect("valid multiple spaces regex")
+});
+
 static LOGCAT_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]*): ?(.*)$",
@@ -35,11 +39,28 @@ impl LogEntry {
     }
 
     pub fn format_line_with_timestamp(&self, show_timestamp: bool) -> String {
-        let suffix = format!("{} {}: {}", self.level, self.tag, self.message);
+        let is_continuation = self.timestamp.is_empty() && self.tag.is_empty();
+        
+        let suffix = if is_continuation {
+            format!("  {}", self.message)
+        } else {
+            format!("{} {}: {}", self.level, self.tag, self.message)
+        };
+        
         if show_timestamp {
-            let body = format!("{:>5} {:>5} {}", self.pid, self.tid, suffix);
+            let body = if is_continuation {
+                format!("{:>13} {}", "", suffix)
+            } else {
+                format!("{:>5} {:>5} {}", self.pid, self.tid, suffix)
+            };
+            
             if self.timestamp.is_empty() {
-                body
+                if is_continuation {
+                    // Match the 18-character width of the timestamp (e.g. "03-15 10:23:45.123")
+                    format!("{:>18} {}", "", body)
+                } else {
+                    body
+                }
             } else {
                 format!("{} {}", self.timestamp, body)
             }
@@ -200,7 +221,7 @@ fn stream_logcat(
             }
         };
 
-        if let Some(entry) = parse_logcat_line(&line) {
+        for entry in parse_logcat_line(&line) {
             if entry_tx.send(entry).is_err() {
                 break;
             }
@@ -288,22 +309,79 @@ fn kill_child(child: &Arc<std::sync::Mutex<Child>>) {
     }
 }
 
-fn parse_logcat_line(line: &str) -> Option<LogEntry> {
-    let captures = LOGCAT_LINE.captures(line)?;
-    let pid = captures.get(2)?.as_str().parse().ok()?;
-    let tid = captures.get(3)?.as_str().parse().ok()?;
+fn parse_logcat_line(line: &str) -> Vec<LogEntry> {
+    let Some(captures) = LOGCAT_LINE.captures(line) else {
+        return Vec::new();
+    };
+    
+    let Some(pid) = captures.get(2).and_then(|m| m.as_str().parse().ok()) else {
+        return Vec::new();
+    };
+    
+    let Some(tid) = captures.get(3).and_then(|m| m.as_str().parse().ok()) else {
+        return Vec::new();
+    };
 
-    Some(LogEntry {
-        timestamp: captures.get(1)?.as_str().to_string(),
-        pid,
-        tid,
-        level: captures.get(4)?.as_str().chars().next()?,
-        tag: captures.get(5)?.as_str().to_string(),
-        message: captures
-            .get(6)
-            .map(|m| m.as_str().to_string())
-            .unwrap_or_default(),
-    })
+    let message = MULTIPLE_SPACES
+        .replace_all(
+            &captures
+                .get(6)
+                .map(|m| m.as_str())
+                .unwrap_or_default(),
+            " ",
+        )
+        .into_owned();
+
+    let timestamp = captures.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+    let level = captures.get(4).and_then(|m| m.as_str().chars().next()).unwrap_or('I');
+    let tag = captures.get(5).map(|m| m.as_str().to_string()).unwrap_or_default();
+
+    let mut entries = Vec::new();
+    
+    if message.is_empty() {
+        entries.push(LogEntry {
+            timestamp,
+            pid,
+            tid,
+            level,
+            tag,
+            message: String::new(),
+        });
+        return entries;
+    }
+
+    let mut start = 0;
+    while start < message.len() {
+        // Calculate maximum chunk size remaining
+        let max_len = std::cmp::min(120, message.len() - start);
+        
+        // Find a safe UTF-8 character boundary. We search backwards from the max_len
+        // offset to avoid splitting a multi-byte character.
+        let mut chunk_len = max_len;
+        while !message.is_char_boundary(start + chunk_len) {
+            chunk_len -= 1;
+        }
+        
+        // In the extremely unlikely event a single character is > 120 bytes, handle it
+        if chunk_len == 0 {
+            chunk_len = message[start..].chars().next().unwrap().len_utf8();
+        }
+
+        let chunk = &message[start..start + chunk_len];
+        
+        entries.push(LogEntry {
+            timestamp: if start == 0 { timestamp.clone() } else { String::new() },
+            pid,
+            tid,
+            level,
+            tag: if start == 0 { tag.clone() } else { String::new() },
+            message: chunk.to_string(),
+        });
+        
+        start += chunk_len;
+    }
+
+    entries
 }
 
 #[cfg(test)]
