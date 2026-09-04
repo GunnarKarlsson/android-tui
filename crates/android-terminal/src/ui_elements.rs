@@ -1,0 +1,355 @@
+//! Shared UI widgets: panel cards, footers, icon buttons, filter rows.
+
+use eframe::egui::{self, Context, FontFamily, FontId, TextStyle, Ui};
+
+use crate::theme::{self, colors};
+
+/// Show an error label using the theme error color.
+pub fn error_label(ui: &mut Ui, text: impl AsRef<str>) {
+    ui.colored_label(colors::ERROR, text.as_ref());
+}
+
+/// Run panel body content with a dedicated text color (headers stay on the default style).
+pub fn panel_body<R>(ui: &mut Ui, color: egui::Color32, add_body: impl FnOnce(&mut Ui) -> R) -> R {
+    let mut style = ui.style().as_ref().clone();
+    style.visuals.override_text_color = Some(color);
+    ui.scope(|ui| {
+        ui.set_style(style);
+        add_body(ui)
+    })
+    .inner
+}
+
+fn panel_separator(ui: &mut Ui) {
+    let spacing = ui.spacing().item_spacing.y;
+    let (rect, response) = ui.allocate_at_least(
+        egui::vec2(ui.available_width(), spacing),
+        egui::Sense::hover(),
+    );
+    if ui.is_rect_visible(rect) {
+        ui.painter().hline(
+            rect.x_range(),
+            rect.center().y,
+            egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
+        );
+    }
+    ui.advance_cursor_after_rect(response.rect);
+}
+
+/// Dark canvas behind panel cards.
+pub fn shell_frame(_ctx: &Context) -> egui::Frame {
+    egui::Frame::NONE.fill(colors::BG_EXTREME)
+}
+
+/// Insets panel cards from the window edge.
+pub fn canvas_margin_frame() -> egui::Frame {
+    egui::Frame::NONE.inner_margin(egui::Margin::same(theme::PANEL_CANVAS_MARGIN))
+}
+
+/// macOS title strip: dark grey bar with off-white app title; traffic lights stay native.
+#[cfg(target_os = "macos")]
+pub fn title_bar(ctx: &Context) {
+    egui::TopBottomPanel::top("os_title_bar")
+        .exact_height(theme::TITLE_BAR_HEIGHT)
+        .frame(egui::Frame::NONE.fill(colors::TITLE_BAR))
+        .show_separator_line(false)
+        .show(ctx, |ui| {
+            let rect = ui.max_rect();
+            let response = ui.interact(
+                rect,
+                ui.id().with("title_bar_drag"),
+                egui::Sense::click_and_drag(),
+            );
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if response.double_clicked() {
+                let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+            }
+
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Android Terminal",
+                FontId::new(13.0, FontFamily::Proportional),
+                colors::OFF_WHITE,
+            );
+        });
+}
+
+fn panel_frame(ui: &Ui) -> egui::Frame {
+    egui::Frame::default()
+        .fill(colors::PANEL_BG)
+        .stroke(egui::Stroke::new(1.0, colors::PANEL_BORDER))
+        .corner_radius(egui::CornerRadius::same(theme::PANEL_CORNER_RADIUS))
+        .inner_margin(panel_padding(ui))
+}
+
+fn panel_padding(ui: &Ui) -> egui::Margin {
+    ui.style().spacing.window_margin
+}
+
+const ICON_BUTTON_PADDING: f32 = 6.0;
+
+fn icon_button_widget(ui: &mut Ui, icon: &str, pressed: bool) -> egui::Response {
+    let galley = egui::WidgetText::from(icon).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Button,
+    );
+    let ink = if galley.mesh_bounds.is_positive() {
+        galley.mesh_bounds
+    } else {
+        galley.rect
+    };
+    let inner = ink.size().x.max(ink.size().y);
+    let button_size = inner + 2.0 * ICON_BUTTON_PADDING;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(button_size, button_size), egui::Sense::click());
+
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&response);
+        let fill = if pressed {
+            ui.visuals().selection.bg_fill
+        } else {
+            visuals.weak_bg_fill
+        };
+        ui.painter().rect(
+            rect,
+            visuals.corner_radius,
+            fill,
+            egui::Stroke::NONE,
+            egui::StrokeKind::Inside,
+        );
+        let pos = rect.center() - ink.center().to_vec2();
+        ui.painter().galley(pos, galley, visuals.text_color());
+    }
+
+    if let Some(cursor) = ui.visuals().interact_cursor {
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(cursor);
+        }
+    }
+
+    response
+}
+
+/// Icon-only button.
+pub fn icon_button(ui: &mut Ui, icon: &str) -> egui::Response {
+    icon_button_widget(ui, icon, false)
+}
+
+/// Icon button that stays visually pressed while `pressed` is true.
+pub fn icon_toggle(ui: &mut Ui, icon: &str, pressed: bool) -> egui::Response {
+    icon_button_widget(ui, icon, pressed)
+}
+
+/// Space below a toolbar row (filter, etc.), matching panel padding.
+pub fn section_gap(ui: &mut Ui) {
+    ui.add_space(panel_padding(ui).bottom as f32);
+}
+
+/// Filter row with themed spacing underneath.
+pub fn filter_row(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
+    ui.horizontal(add_contents);
+    section_gap(ui);
+}
+
+/// Stable palette index for a tag name.
+pub fn tag_color_index(tag: &str) -> usize {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    tag.to_lowercase().hash(&mut hasher);
+    hasher.finish() as usize % colors::TAG_HIGHLIGHTS.len()
+}
+
+/// Removable tag-filter badge. Returns `true` when the remove control is clicked.
+pub fn tag_filter_badge(ui: &mut Ui, label: &str, bg: egui::Color32, fg: egui::Color32) -> bool {
+    let mut remove = false;
+    egui::Frame::default()
+        .fill(bg)
+        .corner_radius(egui::CornerRadius::same(4))
+        .inner_margin(egui::Margin::symmetric(6, 2))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(egui::RichText::new(label).color(fg).monospace());
+                if ui
+                    .small_button("×")
+                    .on_hover_text("Remove tag filter")
+                    .clicked()
+                {
+                    remove = true;
+                }
+            });
+        });
+    remove
+}
+
+/// Row of active tag-filter badges. `on_remove` is called with the badge index.
+pub fn tag_filter_row(
+    ui: &mut Ui,
+    tags: &[crate::app::LogcatTagFilter],
+    on_remove: &mut Option<usize>,
+) {
+    if tags.is_empty() {
+        return;
+    }
+
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+        for (index, filter) in tags.iter().enumerate() {
+            let (bg, fg) =
+                colors::TAG_HIGHLIGHTS[filter.color_index % colors::TAG_HIGHLIGHTS.len()];
+            let label = format!("tag:{}", filter.tag);
+            if tag_filter_badge(ui, &label, bg, fg) {
+                *on_remove = Some(index);
+            }
+        }
+    });
+    section_gap(ui);
+}
+
+pub fn panel_loading(ui: &mut Ui) {
+    ui.label("Loading...");
+}
+
+/// One chrome for every panel: uniform padding on all four sides, title, then body.
+pub fn panel<R>(
+    ui: &mut Ui,
+    title: impl Into<egui::RichText>,
+    add_body: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    panel_with_header_actions(ui, title, |_| {}, add_body)
+}
+
+/// Like [`panel`], with extra widgets on the header row (e.g. the devices refresh icon).
+pub fn panel_with_header_actions<R>(
+    ui: &mut Ui,
+    title: impl Into<egui::RichText>,
+    add_header_actions: impl FnOnce(&mut Ui),
+    add_body: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    panel_frame(ui)
+        .show(ui, |ui| {
+            ui.set_min_size(ui.max_rect().size());
+            ui.horizontal(|ui| {
+                ui.heading(title);
+                add_header_actions(ui);
+            });
+            panel_separator(ui);
+            add_body(ui)
+        })
+        .inner
+}
+
+/// Like [`panel_with_header_actions`], with a bottom Auto-scroll footer inside the card.
+///
+/// `add_contents` receives the current auto-scroll flag for stick-to-bottom; the footer
+/// is the only control that toggles it.
+pub fn panel_with_footer<R>(
+    ui: &mut Ui,
+    title: impl Into<egui::RichText>,
+    add_header_actions: impl FnOnce(&mut Ui),
+    add_contents: impl FnOnce(&mut Ui, bool) -> R,
+    auto_scroll: &mut bool,
+) -> R {
+    // Same structure as `Frame::begin`/`end`, but always paint/allocate the tile-sized
+    // content rect. Overflowing body content must not push the bottom stroke outside the
+    // pane clip (that drops the bottom border).
+    let frame = panel_frame(ui);
+    let where_to_put_background = ui.painter().add(egui::Shape::Noop);
+    let outer_rect_bounds = ui.available_rect_before_wrap();
+    let mut content_rect = outer_rect_bounds - frame.total_margin();
+    content_rect.max.x = content_rect.max.x.max(content_rect.min.x);
+    content_rect.max.y = content_rect.max.y.max(content_rect.min.y);
+
+    let mut content_ui = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
+    content_ui.set_clip_rect(content_ui.clip_rect().intersect(content_rect));
+    content_ui.set_min_size(content_rect.size());
+
+    content_ui.horizontal(|ui| {
+        ui.heading(title);
+        add_header_actions(ui);
+    });
+    panel_separator(&mut content_ui);
+
+    let footer_height = panel_footer_height(&content_ui);
+    let body_height = (content_ui.available_height() - footer_height).max(0.0);
+    let result = content_ui
+        .allocate_ui(egui::vec2(content_ui.available_width(), body_height), |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
+            add_contents(ui, *auto_scroll)
+        })
+        .inner;
+
+    panel_footer(&mut content_ui, auto_scroll);
+
+    let widget_rect = frame.widget_rect(content_rect);
+    if ui.is_rect_visible(widget_rect) {
+        ui.painter()
+            .set(where_to_put_background, frame.paint(content_rect));
+    }
+    ui.allocate_rect(frame.outer_rect(content_rect), egui::Sense::hover());
+
+    result
+}
+
+/// Vertical padding above and below the footer status text.
+const FOOTER_PAD_Y: f32 = 8.0;
+
+/// Vertical space reserved for [`panel_footer`].
+fn panel_footer_height(ui: &Ui) -> f32 {
+    let text = ui.text_style_height(&TextStyle::Small);
+    text + 2.0 * FOOTER_PAD_Y
+}
+
+/// Draws the panel footer bar: top hairline, then a clickable Auto-scroll on/off control.
+pub fn panel_footer(ui: &mut Ui, auto_scroll: &mut bool) {
+    let height = panel_footer_height(ui);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::hover(),
+    );
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top(),
+        egui::Stroke::new(1.0, colors::PANEL_SEPARATOR),
+    );
+
+    let label = if *auto_scroll {
+        "Active"
+    } else {
+        "Paused"
+    };
+
+    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let response = ui
+                .add(
+                    egui::Label::new(
+                        egui::RichText::new(label)
+                            .small()
+                            .color(if *auto_scroll {
+                                colors::FOOTER_TEXT
+                            } else {
+                                egui::Color32::from_rgb(255, 100, 100)
+                            }),
+                    )
+                    .sense(egui::Sense::click()),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Toggle logcat updates");
+            if response.clicked() {
+                *auto_scroll = !*auto_scroll;
+            }
+        });
+    });
+}

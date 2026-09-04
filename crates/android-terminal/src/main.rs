@@ -2,6 +2,7 @@ mod app;
 mod panels;
 mod theme;
 mod tiles;
+mod ui_elements;
 
 use adb_client::{Adb, DeviceInfo};
 use egui_tiles::Tree;
