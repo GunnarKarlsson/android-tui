@@ -277,16 +277,30 @@ pub fn panel_with_footer<R>(
     });
     panel_separator(&mut content_ui);
 
+    // Pin the footer to the card bottom. Sequential allocation lets a ScrollArea
+    // grow the body and push the toggle below the clip rect (error logcat).
     let footer_height = panel_footer_height(&content_ui);
-    let body_height = (content_ui.available_height() - footer_height).max(0.0);
+    let max_rect = content_ui.max_rect();
+    let footer_top = (max_rect.bottom() - footer_height).max(max_rect.top());
+    let footer_rect = egui::Rect::from_min_max(
+        egui::pos2(max_rect.left(), footer_top),
+        max_rect.right_bottom(),
+    );
+    let body_rect = egui::Rect::from_min_max(
+        egui::pos2(max_rect.left(), content_ui.next_widget_position().y),
+        egui::pos2(max_rect.right(), footer_rect.top()),
+    );
+
     let result = content_ui
-        .allocate_ui(egui::vec2(content_ui.available_width(), body_height), |ui| {
-            ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
+        .allocate_new_ui(egui::UiBuilder::new().max_rect(body_rect), |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(body_rect));
             add_contents(ui, *auto_scroll)
         })
         .inner;
 
-    panel_footer(&mut content_ui, auto_scroll);
+    content_ui.allocate_new_ui(egui::UiBuilder::new().max_rect(footer_rect), |ui| {
+        panel_footer(ui, auto_scroll);
+    });
 
     let widget_rect = frame.widget_rect(content_rect);
     if ui.is_rect_visible(widget_rect) {
@@ -307,16 +321,10 @@ fn panel_footer_height(ui: &Ui) -> f32 {
     text + 2.0 * FOOTER_PAD_Y
 }
 
-/// Draws the panel footer bar: top hairline, then a clickable Auto-scroll on/off control.
+/// Draws the panel footer bar: top hairline, then a clickable Active/Paused control.
 pub fn panel_footer(ui: &mut Ui, auto_scroll: &mut bool) {
-    let height = panel_footer_height(ui);
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), height),
-        egui::Sense::hover(),
-    );
-    if !ui.is_rect_visible(rect) {
-        return;
-    }
+    let rect = ui.max_rect();
+    ui.allocate_rect(rect, egui::Sense::hover());
 
     ui.painter().hline(
         rect.x_range(),
