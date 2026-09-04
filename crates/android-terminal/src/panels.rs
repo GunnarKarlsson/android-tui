@@ -680,7 +680,8 @@ fn show_log_scroll(
                     ui.label(job);
                 } else {
                     ui.add(
-                        egui::Label::new(egui::RichText::new(text).color(color)).wrap_mode(egui::TextWrapMode::Extend),
+                        egui::Label::new(egui::RichText::new(text).color(color))
+                            .wrap_mode(egui::TextWrapMode::Extend),
                     );
                 }
             }
