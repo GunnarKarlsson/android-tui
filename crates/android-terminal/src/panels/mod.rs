@@ -1,3 +1,4 @@
+mod devices;
 mod donut;
 mod insight;
 mod logcat;
@@ -6,6 +7,7 @@ mod ram;
 mod storage;
 mod traffic;
 
+pub use devices::devices_panel;
 pub use insight::insight_panel;
 pub use logcat::{logcat_all_panel, logcat_errors_panel};
 pub use network::network_panel;

@@ -135,7 +135,7 @@ impl Behavior<PanelId> for AppTilesBehavior<'_> {
     fn pane_ui(&mut self, ui: &mut egui::Ui, _tile_id: TileId, pane: &mut PanelId) -> UiResponse {
         match pane {
             PanelId::Devices => {
-                self.app.show_devices(ui);
+                panels::devices_panel(ui, self.app);
             }
             PanelId::Ram => {
                 panels::ram_gauge_panel(ui, self.app);

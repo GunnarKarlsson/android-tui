@@ -11,7 +11,6 @@ use ai_insight::{build_snapshot, spawn_insight, InsightLine, InsightUpdate, Leve
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
-use crate::theme;
 use crate::ui_elements;
 
 pub const MAX_LOG_LINES: usize = 10_000;
@@ -907,72 +906,6 @@ impl App {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
     }
-
-    pub fn show_devices(&mut self, ui: &mut egui::Ui) {
-        let mut refresh = false;
-        ui_elements::panel_with_header_actions(
-            ui,
-            "Devices",
-            |ui| {
-                refresh = ui_elements::icon_button(ui, theme::icons::REFRESH).clicked();
-            },
-            |ui| {
-                self.show_devices_body(ui);
-            },
-        );
-        if refresh {
-            self.refresh_devices();
-        }
-    }
-
-    fn show_devices_body(&mut self, ui: &mut egui::Ui) {
-        if let Some(error) = &self.adb_error {
-            ui_elements::error_label(ui, "ADB not available");
-            ui.label(error);
-            return;
-        }
-
-        if let Some(error) = &self.list_error {
-            ui_elements::error_label(ui, error);
-        }
-
-        if self.devices.is_empty() {
-            ui.label("No devices found.");
-            return;
-        }
-
-        egui::ScrollArea::vertical()
-            .id_salt(egui::Id::new("device_list"))
-            .auto_shrink([false, false])
-            .max_height(ui.available_height())
-            .show(ui, |ui| {
-                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                    let device_count = self.devices.len();
-                    for index in 0..device_count {
-                        let device = &self.devices[index];
-                        let selected =
-                            self.selected_serial.as_deref() == Some(device.serial.as_str());
-                        let label = format!("{}\n{}", device.model, device.serial);
-
-                        if device.state == DeviceState::Device {
-                            if ui.selectable_label(selected, label).clicked() && !selected {
-                                let serial = self.devices[index].serial.clone();
-                                self.select_device(serial);
-                            }
-                        } else {
-                            ui.add_enabled_ui(false, |ui| {
-                                ui.label(format!(
-                                    "{}\n{} ({})",
-                                    device.model,
-                                    device.serial,
-                                    device_state_label(&device.state)
-                                ));
-                            });
-                        }
-                    }
-                });
-            });
-    }
 }
 
 fn take_log_entries(rx: Option<&Receiver<LogEntry>>) -> Vec<LogEntry> {
@@ -994,13 +927,4 @@ fn first_ready_serial(devices: &[DeviceInfo]) -> Option<String> {
         .iter()
         .find(|device| device.state == DeviceState::Device)
         .map(|device| device.serial.clone())
-}
-
-fn device_state_label(state: &DeviceState) -> &str {
-    match state {
-        DeviceState::Device => "device",
-        DeviceState::Offline => "offline",
-        DeviceState::Unauthorized => "unauthorized",
-        DeviceState::Other(value) => value,
-    }
 }
