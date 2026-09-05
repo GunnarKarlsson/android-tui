@@ -31,7 +31,7 @@ impl TerminalApp {
 
 impl eframe::App for TerminalApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        self.inner.update_panels(ctx);
+        self.inner.tick(ctx);
 
         #[cfg(target_os = "macos")]
         ui_elements::title_bar(ctx);

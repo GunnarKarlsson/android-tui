@@ -869,7 +869,7 @@ impl App {
         updated
     }
 
-    pub fn update_panels(&mut self, ctx: &egui::Context) {
+    pub fn tick(&mut self, ctx: &egui::Context) {
         let mut needs_repaint = false;
         if self.drain_logcat() {
             needs_repaint = true;
